@@ -3398,7 +3398,7 @@ const PL = {
   hp: PLC.maxHp, stam: PLC.maxStam, stamCd: 0, flasks: PLC.flasks,
   state: 'idle', st: 0, anim: 'idle', at: 0, frame: 0,
   iTime: 0, hurtT: 0, dead: false, deadT: 0, blockHold: false, parryT: 0,
-  hitDone: false, combo: 0, comboT: 0, capeK: 0, capeV: 0, lastGround: 60,
+  hitDone: false, combo: 0, comboT: 0, capeK: 0, capeV: 0, lastGround: 60, rollIF: false,
   landForce: 0, flashT: 0, stepPhase: 0, hitCount: 0,
   attackDamageDealt: false, guardBreak: 0, healT: 0, respawnT: 0,
   reset() {
@@ -3406,6 +3406,7 @@ const PL = {
     this.hp = PLC.maxHp; this.stam = PLC.maxStam; this.flasks = PLC.flasks;
     this.state = 'idle'; this.st = 0; this.anim = 'idle'; this.at = 0; this.frame = 0;
     this.iTime = 0; this.dead = false; this.deadT = 0; this.combo = 0; this.capeK = 0; this.capeV = 0;
+    this.rollIF = false;
     this.flashT = 0; this.guardBreak = 0; this.healT = 0; this.respawnT = 0; this.parryT = 0;
   },
   get cx() { return this.x; },
@@ -3484,11 +3485,13 @@ function plUpdate(dt) {
   /* ---- state behaviour ---- */
   const A = KA[p.anim];
   let allowMove = true, spd = PLC.runSpeed;
+  p.rollIF = false;                       /* set again below only while rolling */
   switch (p.state) {
     case 'roll': {
       allowMove = false;
       const t = p.st / PLC.rollDur;
-      p.iTime = (t > PLC.rollIFrames[0] / PLC.rollDur && t < PLC.rollIFrames[1] / PLC.rollDur) ? 0.02 : p.iTime;
+      p.rollIF = (t > PLC.rollIFrames[0] / PLC.rollDur && t < PLC.rollIFrames[1] / PLC.rollDur);
+      p.iTime = p.rollIF ? 0.02 : p.iTime;
       p.vx = p.face * PLC.rollSpeed * (1 - eIn(clamp(t, 0, 1)) * 0.55);
       if (p.onGround && (p.st % 0.07) < dt) FX.rollDust(p.x, p.y, p.face);
       if (p.st >= PLC.rollDur) { plSet(guardWanted ? 'block' : 'idle', guardWanted ? 'block' : 'idle'); }
@@ -3564,6 +3567,11 @@ function plUpdate(dt) {
 
   /* arena confinement */
   if (GAME.arenaLocked) p.x = clamp(p.x, LV.arenaX0 + 34, LV.arenaX1 - 10);
+  /* the barred portcullis holds the road until the last goblin is down */
+  if (gateBarred() && p.x > LV.gateX - 9) {
+    p.x = LV.gateX - 9;
+    if (p.vx > 0) p.vx = 0;
+  }
   p.x = clamp(p.x, 6, LV.w - 8);
 
   /* ---- collisions ---- */
@@ -3700,9 +3708,17 @@ function plStrike(heavy) {
 }
 
 /* damage taken by the player, routed through guard / parry / i-frames */
-function damagePlayer(amount, srcX, kind, contactY) {
+/* `answer` is the word the telegraph put over the boss's head. A blow that
+   names its answer can only be beaten that way: rolling under a swing that
+   asked to be parried is the wrong answer and it lands. Blows with no
+   telegraph (goblins, daggers) pass nothing and behave as they always did. */
+function damagePlayer(amount, srcX, kind, contactY, answer) {
   const p = PL;
-  if (p.dead || p.iTime > 0) {
+  if (p.dead) return 'dodge';
+  /* only the roll's OWN i-frames are refused — invulnerability earned any
+     other way (a hit, a parry, a pit respawn) always holds */
+  const wrongRoll = p.rollIF && answer && answer !== 'ROLL';
+  if (p.iTime > 0 && !wrongRoll) {
     if (p.state === 'roll') FX.afterimage(p.x, p.y, p.face);
     return 'dodge';
   }
@@ -3710,7 +3726,8 @@ function damagePlayer(amount, srcX, kind, contactY) {
   const cy2 = contactY === undefined ? p.y - 26 : contactY;
   const cxp = p.x + p.face * 11;
   if ((p.state === 'block' || p.state === 'parry') && fromFront) {
-    if (p.parryT > 0) {
+    /* the shield still stops it, but only the named blow can be turned */
+    if (p.parryT > 0 && (!answer || answer === 'PARRY')) {
       /* ---- PARRY ---- */
       plSet('parry', 'parry');
       p.parryT = 0; p.iTime = 0.30;
@@ -4190,7 +4207,8 @@ function bossUpdate(dt) {
         const hb = PL.hurtBox();
         if (!(hb.x1 < bx0 || hb.x0 > bx1 || hb.y1 < by0 || hb.y0 > by1)) {
           b.hitDone = true;
-          const res = damagePlayer(K.dmg, b.x, 'boss', clamp(PL.y - 22, by0, by1));
+          const tell = BTELL[b.state];
+          const res = damagePlayer(K.dmg, b.x, 'boss', clamp(PL.y - 22, by0, by1), tell ? tell.act : null);
           if (res === 'parry') { bossStun(); }
           else if (res === 'hit') { PL.vx = (PL.x - b.x > 0 ? 1 : -1) * K.kb; PL.vy = -110; }
         }
@@ -4293,38 +4311,93 @@ function shakeDebrisFromWalls(n) {
 /* ---------------------------------------------------------------------
    19.  THE GATE
    --------------------------------------------------------------------- */
-const GATE = { y: -120, target: GY - 92, closing: false, closed: false, t: 0, y0: -120 };
+/* The portcullis has two jobs. It bars the road to the arena until the last
+   goblin is down, then hauls itself up; and once the knight is through, it
+   drops behind him and there is no way back out.
+     shut -> raising -> open -> falling -> closed                          */
+const GATE = {
+  y: GY - 92, shutY: GY - 92, upY: -120,
+  state: 'shut', t: 0
+};
+const GATE_H = 92;
+function hostStanding() {
+  let n = 0;
+  for (const e of EN) if (!e.dead) n++;
+  return n;
+}
+/* solid while it hangs low enough for the knight to walk into */
+function gateBarred() {
+  if (GATE.state === 'shut') return true;
+  if (GATE.state === 'raising') return GATE.y + GATE_H > GY - PLC.h + 6;
+  return false;
+}
 function startBossFight() {
   if (GAME.arenaLocked) return;
   GAME.arenaLocked = true;
   CAM.lock = 1; CAM.lockX0 = LV.arenaX0 - 66; CAM.lockX1 = LV.arenaX1;
-  GATE.closing = true; GATE.t = 0;
+  GATE.state = 'falling'; GATE.t = 0; GATE.y = GATE.upY;
   BOSS.active = true; bSet('intro', 'roar'); BOSS.introT = 0;
   AUD.startMusic('boss');
   GAME.bossNameT = 3.2;
 }
 function gateUpdate(dt) {
-  if (!GATE.closing || GATE.closed) return;
-  GATE.t += dt;
-  const t = mn(1, GATE.t / 0.42);
-  GATE.y = GATE.y0 + (GATE.target - GATE.y0) * eIn(t);
-  if (t >= 1) {
-    GATE.closed = true; GATE.closing = false;
-    AUD.gate(); CAM.kick(4.4, 6);
-    FX.dust(LV.gateX + 6, GY, 8, 40, 20, P.stnLt);
-    FX.dust(LV.gateX + 50, GY, 8, 40, 20, P.stnLt);
-    for (let i = 0; i < 6; i++) PS.spawn({
-      x: LV.gateX + rnd(0, 56), y: GY - rnd(0, 6), vx: rnd(-90, 90), vy: rnd(-90, -20),
-      life: rnd(0.15, 0.3), size: 1, col: P.stlHi, alpha: 0.9, grav: 240, shape: 2, len: 4,
-      layer: L_COMBAT, add: true
-    });
-    for (let i = 0; i < 12; i++) PS.spawn({
-      x: LV.gateX + rnd(-4, 60), y: GY - rnd(0, 90), vx: rnd(-40, 40), vy: rnd(-30, 40),
-      life: rnd(0.5, 1.1), size: rint(1, 2), col: P.stn, col2: P.stnS,
-      grav: 300, shape: 3, layer: L_WORLD, ground: GY
-    });
-    for (let i = 0; i < 5; i++) spawnFogWisp(LV.gateX + rnd(-20, 80), GY - rnd(2, 10), true);
+  const G = GATE;
+  if (G.state === 'shut') {
+    /* the road opens the moment the field is clear */
+    if (EN.length && hostStanding() === 0) {
+      G.state = 'raising'; G.t = 0;
+      AUD.gate(); AUD.uiBig();
+      CAM.kick(2.8, 7);
+      GAME.gateOpenT = 2.8;
+      FX.dust(LV.gateX + 8, GY, 6, 30, 16, P.stnLt);
+      FX.dust(LV.gateX + 48, GY, 6, 30, 16, P.stnLt);
+    }
+    return;
   }
+  if (G.state === 'raising') {
+    G.t += dt;
+    const t = mn(1, G.t / 1.15);
+    G.y = G.shutY + (G.upY - G.shutY) * eOut(t);
+    /* grit shaken loose from the housing as the chains take the weight */
+    if (Math.random() < 0.4) PS.spawn({
+      x: LV.gateX + rnd(0, 56), y: GY - rnd(96, 118), vx: rnd(-8, 8), vy: rnd(20, 50),
+      life: rnd(0.5, 1.0), size: 1, col: P.stnM, col2: P.stnS,
+      grav: 240, shape: 3, layer: L_WORLD, ground: GY
+    });
+    if (t >= 1) G.state = 'open';
+    return;
+  }
+  if (G.state === 'falling') {
+    G.t += dt;
+    const t = mn(1, G.t / 0.42);
+    G.y = G.upY + (G.shutY - G.upY) * eIn(t);
+    if (t >= 1) { G.state = 'closed'; gateSlam(); }
+  }
+}
+/* iron meeting stone: the whole field feels it */
+function gateSlam() {
+  AUD.gate(); AUD.land(1);
+  CAM.kick(8.5, 3.6);
+  GAME.hitstop = mx(GAME.hitstop, 0.06);
+  FX.dust(LV.gateX + 6, GY, 12, 52, 26, P.stnLt);
+  FX.dust(LV.gateX + 50, GY, 12, 52, 26, P.stnLt);
+  FX.dustColumn(LV.gateX + 28, GY, 120);
+  FX.dustRing(LV.gateX + 28, GY, 14, 150);
+  FX.stoneBurst(LV.gateX + 8, GY, 6, 130, 5);
+  FX.stoneBurst(LV.gateX + 48, GY, 6, 130, 5);
+  for (let i = 0; i < 10; i++) PS.spawn({
+    x: LV.gateX + rnd(0, 56), y: GY - rnd(0, 6), vx: rnd(-120, 120), vy: rnd(-110, -25),
+    life: rnd(0.15, 0.32), size: 1, col: P.stlHi, alpha: 0.9, grav: 240, shape: 2, len: 5,
+    layer: L_COMBAT, add: true
+  });
+  for (let i = 0; i < 16; i++) PS.spawn({
+    x: LV.gateX + rnd(-4, 60), y: GY - rnd(0, 90), vx: rnd(-50, 50), vy: rnd(-40, 50),
+    life: rnd(0.5, 1.2), size: rint(1, 2), col: P.stn, col2: P.stnS,
+    grav: 300, shape: 3, layer: L_WORLD, ground: GY
+  });
+  /* the arena walls shed what the impact knocks loose */
+  shakeDebrisFromWalls(12);
+  for (let i = 0; i < 6; i++) spawnFogWisp(LV.gateX + rnd(-20, 80), GY - rnd(2, 10), true);
 }
 
 /* ---------------------------------------------------------------------
@@ -4383,7 +4456,7 @@ function textC(g, s, cx, y, col, sc, sp, sh) {
 const GAME = {
   mode: 'boot', t: 0, hitstop: 0, damageFlash: 0, parryFlash: 0,
   arenaLocked: false, kills: 0, reflectKills: 0, starFx: [],
-  deathT: 0, winT: 0, bossNameT: 0, phaseText: 0, prompt: 0,
+  deathT: 0, winT: 0, bossNameT: 0, phaseText: 0, prompt: 0, gateOpenT: 0,
   warm: [], warmI: 0, ready: false, fps: 60, slow: 1,
   blocked: false            /* handheld held upright — the world is frozen */
 };
@@ -4418,7 +4491,7 @@ function resetRun() {
   GAME.damageFlash = 0; GAME.parryFlash = 0; GAME.hitstop = 0;
   GAME.deathT = 0; GAME.winT = 0; GAME.bossNameT = 0; GAME.phaseText = 0;
   GAME.starFx.length = 0; GAME.hpGhost = PLC.maxHp; GAME.t = 0;
-  GATE.y = GATE.y0; GATE.closing = false; GATE.closed = false; GATE.t = 0;
+  GATE.y = GATE.shutY; GATE.state = 'shut'; GATE.t = 0; GAME.gateOpenT = 0;
   CAM.lock = 0; CAM.x = 0; CAM.tx = 0; CAM.shake = 0;
   for (const s of LV.spawns) spawnEnemy(s.t, s.x, s.y);
   CAM.follow(PL.x, PL.y, 1, 1, 0);
@@ -4669,6 +4742,31 @@ function drawHUD() {
     textC(ctx, 'THE CROWN BURNS', VW / 2, 108, '#c05a3a', 1, 2, true);
     ctx.globalAlpha = 1;
   }
+  /* the barred gate has to say why it will not lift, or walking into it
+     reads as a bug rather than a condition */
+  if (!PL.dead && gateBarred() && ab(PL.x - LV.gateX) < 160) {
+    const n = hostStanding();
+    const s1 = 'THE GATE IS BARRED';
+    const s2 = n === 1 ? 'ONE OF THE HOST STILL STANDS' : n + ' OF THE HOST STILL STAND';
+    const w = mx(textW(s1, 1, 2), textW(s2, 1, 2));
+    const a = clamp((160 - ab(PL.x - LV.gateX)) / 40, 0, 1);
+    /* kept clear of the first-run control line that sits at y 84 */
+    ctx.globalAlpha = a * 0.78;
+    r(ctx, fl(VW / 2 - w / 2) - 6, 54, w + 12, 25, '#05070a');
+    r(ctx, fl(VW / 2 - w / 2) - 6, 54, w + 12, 1, '#4a3d1c');
+    r(ctx, fl(VW / 2 - w / 2) - 6, 78, w + 12, 1, '#4a3d1c');
+    ctx.globalAlpha = a;
+    textC(ctx, s1, VW / 2, 58, '#b8963f', 1, 2, true);
+    textC(ctx, s2, VW / 2, 69, '#7d8898', 1, 2, true);
+    ctx.globalAlpha = 1;
+  }
+  if (GAME.gateOpenT > 0) {
+    const a = clamp(GAME.gateOpenT / 0.5, 0, 1) * clamp((2.8 - GAME.gateOpenT) / 0.3, 0, 1);
+    ctx.globalAlpha = a;
+    textC(ctx, 'THE GATE LIFTS', VW / 2, 96, P.gldHi, 2, 2, true);
+    textC(ctx, 'THE KING WAITS BEYOND', VW / 2, 112, '#8a7f68', 1, 2, true);
+    ctx.globalAlpha = 1;
+  }
   /* first-run control reminder, on its own dark plate */
   if (GAME.t < 9 && !GAME.arenaLocked && !PL.dead) {
     const a = clamp(mn(GAME.t, 9 - GAME.t) / 1.2, 0, 1);
@@ -4890,6 +4988,7 @@ function updatePlay(dt) {
   if (GAME.parryFlash > 0) GAME.parryFlash -= dt;
   if (GAME.bossNameT > 0) GAME.bossNameT -= dt;
   if (GAME.phaseText > 0) GAME.phaseText -= dt;
+  if (GAME.gateOpenT > 0) GAME.gateOpenT -= dt;
   for (let i = GAME.starFx.length - 1; i >= 0; i--) { GAME.starFx[i].t -= dt; if (GAME.starFx[i].t <= 0) GAME.starFx.splice(i, 1); }
   GAME.hpGhost += (PL.hp - GAME.hpGhost) * mn(1, dt * 2.2);
 
