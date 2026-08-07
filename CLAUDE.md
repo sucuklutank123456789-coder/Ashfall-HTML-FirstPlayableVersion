@@ -200,7 +200,7 @@ bayraklar yırtık, kale gedikli, ordu uzakta ve ilgisiz. Oyuncu bu dünyada **s
 | Ağır saldırı | — | Sağ tık | `HEAVY` |
 | Guard / Parry | `Q` (basılı tut; **taze basış** = parry) | — | `GUARD` |
 | Flask | `E` | — | `FLASK` |
-| Başlat / Pause / Mute / Restart | `Enter` / `Esc`,`P` / `M` / `R` | — | ekrana dokun / `II` / `MUTE` |
+| Başlat / Pause / Mute / Restart | `Enter` / `Esc`,`P` / `M` / `R` | — | ekrana dokun / `II` / `MUTE` / `QUIT` (yalnızca pause'da görünür) |
 
 `IN` nesnesi `held` (basılı), `hit` (bu karede kenar) ve **`buf` input buffer'ı** (0.13 s) tutar.
 Aksiyonlar `IN.consume(act)` ile tüketilir → bir tık, kısa bir animasyon kilidinden hemen sonra da işler.
@@ -314,8 +314,12 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   `TOUCH` durumuna göre dallanır: dokunmatikte "TAP TO BEGIN" / "TAP TO RISE AGAIN" /
   "TAP II TO CONTINUE" ve klavye tuş listesi yerine tek satırlık parry ipucu gösterilir.
   **Yeni bir istem metni eklerken bu dallanmayı koru** — mobilde "PRESS ENTER" yazmak yalandır.
-  Pause ekranı dokunmatikte "abandon" satırını hiç göstermez, çünkü `restart` (`R`) aksiyonunun
-  pad karşılığı yoktur.
+- **`QUIT` pad'i (`restart`) bağlamsaldır.** `tcSyncQuit()` onu yalnızca `GAME.mode === 'paused'`
+  iken gösterir ve `.hidden` yazmasını yalnızca durum *değiştiğinde* yapar (kare başına DOM
+  yazımı yok). Gerekçe klavyeyle birebir aynı: `R` de sadece `paused` içinde okunur, oyun
+  sırasında hiçbir şey yapmaz. Sahanın üzerinde sürekli duran ve yanlış dokunuşta boss
+  dövüşünü çöpe atan bir buton olmamalı. Rengi kan kırmızısıdır (`#a8635c`), yıkıcı olduğu
+  okunsun diye.
 
 ---
 

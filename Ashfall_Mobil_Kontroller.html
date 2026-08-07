@@ -74,6 +74,11 @@
   .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;color:#c79a9a;}
   .tb.sys{width:36px;height:30px;border-radius:7px;font-size:10px;color:#79828f;}
   .tb.sys.muted{color:#7a5652;border-color:#6b4844;text-decoration:line-through;}
+  /* abandoning a run is destructive, so it wears the blood colour and only
+     appears on the pause screen — see tcSyncQuit() */
+  .tb.sys.quit{width:42px;color:#a8635c;border-color:#6b3a38;}
+  .tb.sys.quit.on{background:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
+  .tb[hidden]{display:none;}
 
   .tc-row{display:flex;gap:var(--gap);align-items:flex-end;}
   .tc-left{
@@ -143,6 +148,7 @@
 <div id="hint">A/D MOVE &nbsp;·&nbsp; W JUMP &nbsp;·&nbsp; S ROLL &nbsp;·&nbsp; LEFT CLICK LIGHT &nbsp;·&nbsp; RIGHT CLICK HEAVY &nbsp;·&nbsp; Q GUARD/PARRY &nbsp;·&nbsp; E FLASK</div>
 <div id="tc" hidden>
   <div class="tc-sys">
+    <button class="tb sys quit" id="tb-quit" data-act="restart" aria-label="abandon the run" hidden>QUIT</button>
     <button class="tb sys" data-act="pause" aria-label="pause">II</button>
     <button class="tb sys" id="tb-mute" data-act="mute" aria-label="mute">MUTE</button>
   </div>
@@ -4828,8 +4834,8 @@ function drawPause() {
   textC(ctx, 'PAUSED', VW / 2, 104, P.gldHi, 3, 2, true);
   rule(130, 120, '#5c5240');
   if (TOUCH) {
-    /* R (abandon) has no pad, so the touch build does not promise one */
     textC(ctx, 'TAP  II  TO CONTINUE', VW / 2, 146, '#7d8898', 1, 2, true);
+    textC(ctx, 'TAP  QUIT  TO ABANDON THE FIELD', VW / 2, 160, '#5c6674', 1, 2, true);
   } else {
     textC(ctx, 'PRESS P TO CONTINUE', VW / 2, 146, '#7d8898', 1, 2, true);
     textC(ctx, 'PRESS R TO ABANDON THE FIELD', VW / 2, 160, '#5c6674', 1, 2, true);
@@ -4988,6 +4994,7 @@ function frame(now) {
     }
   }
   if (IN.press('mute')) { AUD.toggle(); tcMuteLabel(); }
+  tcSyncQuit();
   IN.clearEdges();
 }
 
@@ -5053,6 +5060,17 @@ function tcUp(id) {
 function tcMuteLabel() {
   const m = document.getElementById('tb-mute');
   if (m) m.classList.toggle('muted', !!AUD.muted);
+}
+/* QUIT only exists while the run is paused — the same reach the keyboard has,
+   where R is read in 'paused' and nowhere during play. A pad that could throw
+   away a boss fight on a stray thumb has no business sitting over the field. */
+let tcQuitOn = false;
+function tcSyncQuit() {
+  const want = TOUCH && GAME.mode === 'paused';
+  if (want === tcQuitOn) return;
+  tcQuitOn = want;
+  const q = document.getElementById('tb-quit');
+  if (q) q.hidden = !want;
 }
 if (TOUCH && TCPAD) {
   TCPAD.hidden = false;
