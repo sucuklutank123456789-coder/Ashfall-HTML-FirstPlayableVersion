@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<!-- viewport-fit=cover is what makes the env(safe-area-inset-*) rules below real
+     on notched handsets; without it they all resolve to zero -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>ASHFALL — The Last Warlord</title>
 <style>
   html,body{margin:0;padding:0;height:100%;background:#050507;overflow:hidden;}
@@ -42,8 +44,8 @@
     font-family:ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;
   }
   #tc[hidden]{display:none;}
-  @media (max-height:430px){ #tc{--u:52px;--gap:8px;} }
-  @media (max-height:340px){ #tc{--u:44px;--gap:6px;} }
+  /* --u / --gap are driven from JS (sizeTouchPads) off the short screen edge;
+     the values above are only the fallback until the first resize lands. */
 
   .tb{
     pointer-events:auto;-webkit-tap-highlight-color:transparent;
@@ -72,6 +74,11 @@
   .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;color:#c79a9a;}
   .tb.sys{width:36px;height:30px;border-radius:7px;font-size:10px;color:#79828f;}
   .tb.sys.muted{color:#7a5652;border-color:#6b4844;text-decoration:line-through;}
+  /* abandoning a run is destructive, so it wears the blood colour and only
+     appears on the pause screen — see tcSyncQuit() */
+  .tb.sys.quit{width:42px;color:#a8635c;border-color:#6b3a38;}
+  .tb.sys.quit.on{background:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
+  .tb[hidden]{display:none;}
 
   .tc-row{display:flex;gap:var(--gap);align-items:flex-end;}
   .tc-left{
@@ -92,6 +99,45 @@
     right:calc(10px + env(safe-area-inset-right,0px));
     top:calc(10px + env(safe-area-inset-top,0px));
   }
+
+  /* ---------------- portrait gate (handhelds only) ---------------- */
+  #rot{
+    position:fixed;inset:0;z-index:60;display:none;
+    align-items:center;justify-content:center;
+    padding:24px;background:#05060a;
+    font-family:ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;
+    -webkit-user-select:none;user-select:none;
+  }
+  #rot.show{display:flex;}
+  /* the same scanline the game wears, so the prompt belongs to it */
+  #rot::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,rgba(0,0,0,0.17) 0 1px,transparent 1px 2px);
+  }
+  .rot-in{position:relative;z-index:1;max-width:430px;text-align:center;}
+  .rot-ico{width:min(38vw,140px);height:min(38vw,140px);margin:0 auto 26px;}
+  .rot-ico svg{display:block;width:100%;height:100%;overflow:visible;}
+  .rot-dev{transform-origin:60px 62px;animation:rotdev 3.1s ease-in-out infinite;}
+  .rot-arc{animation:rotarc 3.1s ease-in-out infinite;}
+  @keyframes rotdev{
+    0%,15%{transform:rotate(0deg);}
+    45%,76%{transform:rotate(90deg);}
+    97%,100%{transform:rotate(0deg);}
+  }
+  @keyframes rotarc{0%,12%{opacity:.30;}28%{opacity:1;}58%,100%{opacity:.30;}}
+  @media (prefers-reduced-motion:reduce){
+    .rot-dev{animation:none;transform:rotate(90deg);}
+    .rot-arc{animation:none;opacity:.85;}
+  }
+  .rot-t{font-size:15px;letter-spacing:4px;color:#e6cd8b;line-height:1.7;}
+  .rot-s{font-size:10px;letter-spacing:3px;color:#5c6674;line-height:1.9;margin-top:14px;}
+  .rot-r{
+    width:150px;height:1px;margin:20px auto 0;background:#3a3420;position:relative;
+  }
+  .rot-r::before{
+    content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+    margin-left:-2px;background:#b8963f;
+  }
 </style>
 </head>
 <body>
@@ -102,6 +148,7 @@
 <div id="hint">A/D MOVE &nbsp;·&nbsp; W JUMP &nbsp;·&nbsp; S ROLL &nbsp;·&nbsp; LEFT CLICK LIGHT &nbsp;·&nbsp; RIGHT CLICK HEAVY &nbsp;·&nbsp; Q GUARD/PARRY &nbsp;·&nbsp; E FLASK</div>
 <div id="tc" hidden>
   <div class="tc-sys">
+    <button class="tb sys quit" id="tb-quit" data-act="restart" aria-label="abandon the run" hidden>QUIT</button>
     <button class="tb sys" data-act="pause" aria-label="pause">II</button>
     <button class="tb sys" id="tb-mute" data-act="mute" aria-label="mute">MUTE</button>
   </div>
@@ -126,6 +173,27 @@
       <button class="tb roll" data-act="roll"><b>ROLL</b></button>
       <button class="tb jump" data-act="jump"><b>JUMP</b></button>
     </div>
+  </div>
+</div>
+<div id="rot">
+  <div class="rot-in">
+    <div class="rot-ico">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <g class="rot-arc" fill="none" stroke="#b8963f" stroke-width="3" stroke-linecap="round">
+          <path d="M18 42 A 46 46 0 0 1 102 42"/>
+        </g>
+        <path class="rot-arc" fill="#b8963f" d="M102 57 L93 39 L111 39 Z"/>
+        <g class="rot-dev">
+          <rect x="44" y="36" width="32" height="52" rx="5" fill="#14171d" stroke="#4a5360" stroke-width="2"/>
+          <rect x="48" y="43" width="24" height="36" fill="#0a0c11" stroke="#2b323d" stroke-width="1"/>
+          <rect x="55" y="38.5" width="10" height="2" rx="1" fill="#39424f"/>
+          <circle cx="60" cy="83" r="2.4" fill="#39424f"/>
+        </g>
+      </svg>
+    </div>
+    <div class="rot-t">PLEASE ROTATE YOUR DEVICE</div>
+    <div class="rot-r"></div>
+    <div class="rot-s">ASHFALL IS PLAYED IN LANDSCAPE</div>
   </div>
 </div>
 <script>
@@ -4311,7 +4379,8 @@ const GAME = {
   mode: 'boot', t: 0, hitstop: 0, damageFlash: 0, parryFlash: 0,
   arenaLocked: false, kills: 0, reflectKills: 0, starFx: [],
   deathT: 0, winT: 0, bossNameT: 0, phaseText: 0, prompt: 0,
-  warm: [], warmI: 0, ready: false, fps: 60, slow: 1
+  warm: [], warmI: 0, ready: false, fps: 60, slow: 1,
+  blocked: false            /* handheld held upright — the world is frozen */
 };
 
 function buildWarmQueue() {
@@ -4598,7 +4667,9 @@ function drawHUD() {
   /* first-run control reminder, on its own dark plate */
   if (GAME.t < 9 && !GAME.arenaLocked && !PL.dead) {
     const a = clamp(mn(GAME.t, 9 - GAME.t) / 1.2, 0, 1);
-    const s = 'LMB LIGHT   RMB HEAVY   Q GUARD (TAP TO PARRY)   S ROLL   E FLASK';
+    const s = TOUCH
+      ? 'TAP GUARD THE MOMENT A BLOW LANDS TO PARRY IT'
+      : 'LMB LIGHT   RMB HEAVY   Q GUARD (TAP TO PARRY)   S ROLL   E FLASK';
     const w = textW(s, 1, 1);
     ctx.globalAlpha = a * 0.72;
     r(ctx, fl(VW / 2 - w / 2) - 5, 84, w + 10, 13, '#05070a');
@@ -4716,6 +4787,13 @@ function drawTitle() {
     const w = 140, x = fl(VW / 2 - w / 2);
     panel(x - 2, 206, w + 4, 6);
     r(ctx, x, 208, fl(w * GAME.warmI / GAME.warm.length), 2, P.gldD);
+  } else if (TOUCH) {
+    /* the pads are already labelled, so only the one thing they cannot say */
+    if ((WT % 1.2) < 0.75) textC(ctx, 'TAP TO BEGIN', VW / 2, 196, P.gldHi, 2, 2, true);
+    ra(ctx, 0, 234, VW, 28, '#05070a', 0.72);
+    r(ctx, 0, 234, VW, 1, '#1b2029');
+    textC(ctx, 'TAP GUARD AS THE BLOW LANDS TO PARRY', VW / 2, 240, '#79838f', 1, 1, true);
+    textC(ctx, 'II  PAUSE          MUTE  SOUND', VW / 2, 252, '#4f5866', 1, 1, true);
   } else {
     if ((WT % 1.2) < 0.75) textC(ctx, 'PRESS ENTER', VW / 2, 198, P.gldHi, 2, 2, true);
     ra(ctx, 0, 220, VW, 42, '#05070a', 0.72);
@@ -4744,7 +4822,10 @@ function drawEndScreen(win) {
     textC(ctx, 'THE HOST MARCHES ON WITHOUT YOU', VW / 2, 146, '#6b5a5a', 1, 2, true);
   }
   if (t > 1.6 && (WT % 1.2) < 0.75) {
-    textC(ctx, win ? 'PRESS ENTER' : 'PRESS ENTER TO RISE AGAIN', VW / 2, 206, win ? P.gldHi : '#9a8f79', 1, 2, true);
+    const s = TOUCH
+      ? (win ? 'TAP TO CONTINUE' : 'TAP TO RISE AGAIN')
+      : (win ? 'PRESS ENTER' : 'PRESS ENTER TO RISE AGAIN');
+    textC(ctx, s, VW / 2, 206, win ? P.gldHi : '#9a8f79', 1, 2, true);
   }
   ctx.globalAlpha = 1;
 }
@@ -4752,8 +4833,13 @@ function drawPause() {
   ra(ctx, 0, 0, VW, VH, '#05070a', 0.6);
   textC(ctx, 'PAUSED', VW / 2, 104, P.gldHi, 3, 2, true);
   rule(130, 120, '#5c5240');
-  textC(ctx, 'PRESS P TO CONTINUE', VW / 2, 146, '#7d8898', 1, 2, true);
-  textC(ctx, 'PRESS R TO ABANDON THE FIELD', VW / 2, 160, '#5c6674', 1, 2, true);
+  if (TOUCH) {
+    textC(ctx, 'TAP  II  TO CONTINUE', VW / 2, 146, '#7d8898', 1, 2, true);
+    textC(ctx, 'TAP  QUIT  TO ABANDON THE FIELD', VW / 2, 160, '#5c6674', 1, 2, true);
+  } else {
+    textC(ctx, 'PRESS P TO CONTINUE', VW / 2, 146, '#7d8898', 1, 2, true);
+    textC(ctx, 'PRESS R TO ABANDON THE FIELD', VW / 2, 160, '#5c6674', 1, 2, true);
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -4857,6 +4943,11 @@ function frame(now) {
   if (dt > 0.06) dt = 0.06;
   if (dt <= 0) dt = 1 / 60;
 
+  /* portrait on a handheld: the field is behind the rotate prompt, so nothing
+     ticks. lastT is already advanced, so turning back does not hand the world
+     a stored-up frame. */
+  if (GAME.blocked) { IN.clearEdges(); return; }
+
   IN.tick(dt);
   ambientTick(dt);
 
@@ -4903,19 +4994,52 @@ function frame(now) {
     }
   }
   if (IN.press('mute')) { AUD.toggle(); tcMuteLabel(); }
+  tcSyncQuit();
   IN.clearEdges();
 }
 
 /* ---------------------------------------------------------------------
-   26b. ON-SCREEN CONTROLS — multi-touch pads mapped onto the same
-        action names the keyboard uses, so the game logic is untouched.
+   26b. DEVICE PROFILE + ON-SCREEN CONTROLS
+        The pads are mapped onto the same action names the keyboard uses,
+        so the game logic is untouched.
    --------------------------------------------------------------------- */
 const TOUCH = (function () {
   if (location.hash === '#touch') return true;
   if (location.hash === '#notouch') return false;
-  try { if (matchMedia('(pointer:coarse)').matches) return true; } catch (_) { }
-  return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  try {
+    /* a phone or tablet: the pointer you actually play with is a finger */
+    if (matchMedia('(pointer:coarse)').matches) return true;
+    /* a touch panel with no mouse anywhere — but a touchscreen laptop keeps
+       its keyboard and mouse, and must not be handed a thumb pad */
+    if (!matchMedia('(any-pointer:fine)').matches &&
+      (('ontouchstart' in window) || navigator.maxTouchPoints > 0)) return true;
+    return false;
+  } catch (_) {
+    return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  }
 })();
+
+/* The visual viewport is the honest one on a handheld: it shrinks and grows
+   as the browser chrome slides in and out, while innerHeight keeps reporting
+   the space the address bar is still sitting on. */
+function viewW() { const v = window.visualViewport; return (v && v.width) ? v.width : innerWidth; }
+function viewH() { const v = window.visualViewport; return (v && v.height) ? v.height : innerHeight; }
+
+/* What we are running on, refreshed on every resize. */
+const DEV = {
+  touch: TOUCH, kind: 'desktop', portrait: false,
+  dpr: 1, vw: 0, vh: 0, scale: 1, unit: 62, integer: false
+};
+function profileDevice() {
+  const w = viewW(), h = viewH();
+  DEV.vw = w; DEV.vh = h;
+  DEV.dpr = window.devicePixelRatio || 1;
+  DEV.portrait = h > w;
+  /* the short edge is orientation-independent, so a phone stays a phone when
+     it is turned: ~480 CSS px splits every current handset from every tablet */
+  DEV.kind = !TOUCH ? 'desktop' : (mn(w, h) >= 480 ? 'tablet' : 'phone');
+  return DEV;
+}
 const TCPAD = document.getElementById('tc');
 const TC_PTR = {};        /* pointerId -> {act, el} */
 const TC_CNT = {};        /* act -> how many fingers hold it */
@@ -4936,6 +5060,17 @@ function tcUp(id) {
 function tcMuteLabel() {
   const m = document.getElementById('tb-mute');
   if (m) m.classList.toggle('muted', !!AUD.muted);
+}
+/* QUIT only exists while the run is paused — the same reach the keyboard has,
+   where R is read in 'paused' and nowhere during play. A pad that could throw
+   away a boss fight on a stray thumb has no business sitting over the field. */
+let tcQuitOn = false;
+function tcSyncQuit() {
+  const want = TOUCH && GAME.mode === 'paused';
+  if (want === tcQuitOn) return;
+  tcQuitOn = want;
+  const q = document.getElementById('tb-quit');
+  if (q) q.hidden = !want;
 }
 if (TOUCH && TCPAD) {
   TCPAD.hidden = false;
@@ -4970,17 +5105,79 @@ if (TOUCH && TCPAD) {
 }
 
 /* ---------------------------------------------------------------------
-   27.  BOOT
+   27.  BOOT — presentation sizing and the orientation gate
    --------------------------------------------------------------------- */
+
+/* How much of the fitted area an integer scale must still cover before a
+   handheld accepts the letterboxing it costs. Giving up a fifth of a phone
+   screen hurts more than slightly uneven pixel columns do; a desktop has the
+   room to spare and always takes the crisp step. */
+const INT_SCALE_FILL = 0.86;
+
 function resize() {
+  const D = profileDevice();
+  /* the keyboard hint line only exists off touch, so only desktop pays for it */
   const pad = TOUCH ? 0 : 26;
-  let s = mn(innerWidth / VW, (innerHeight - pad) / VH);
-  s = s >= 1 ? fl(s) : mx(0.2, s);       /* crisp integer scale where it fits */
+  const availW = D.vw, availH = mx(80, D.vh - pad);
+
+  /* Snap in DEVICE pixels, not CSS pixels. One game pixel has to cover a whole
+     number of physical pixels or the upscale shows uneven columns that crawl
+     as the camera moves — the one artefact this art style cannot hide. */
+  const fit = mn(availW / VW, availH / VH);
+  let s = fit;
+  D.integer = false;
+  const devScale = fit * D.dpr;
+  if (devScale >= 2) {
+    const cand = fl(devScale) / D.dpr;
+    if (!TOUCH || cand / fit >= INT_SCALE_FILL) { s = cand; D.integer = true; }
+  }
+  s = mx(0.2, s);
+  D.scale = s;
+
   cvs.style.width = (VW * s) + 'px';
   cvs.style.height = (VH * s) + 'px';
+  /* centre against the visual viewport so the canvas never sits behind the
+     browser chrome when it slides back into view */
+  document.body.style.height = D.vh + 'px';
+
+  sizeTouchPads();
+  updateOrientationGate();
 }
+
+/* Pads are sized off the short screen edge: a fixed 62px button is a
+   thumb-swallowing slab on a small phone and a postage stamp on a tablet. */
+function sizeTouchPads() {
+  if (!TOUCH || !TCPAD) return;
+  const u = clamp(Math.round(mn(DEV.vw, DEV.vh) * 0.17), 42, 84);
+  TCPAD.style.setProperty('--u', u + 'px');
+  TCPAD.style.setProperty('--gap', clamp(Math.round(u * 0.18), 6, 16) + 'px');
+  DEV.unit = u;
+}
+
+/* A handheld held upright gets the rotate prompt instead of a 16:9 sliver. */
+const ROTEL = document.getElementById('rot');
+function updateOrientationGate() {
+  const block = TOUCH && DEV.portrait;
+  if (block === GAME.blocked) return;
+  GAME.blocked = block;
+  if (ROTEL) ROTEL.classList.toggle('show', block);
+  if (TCPAD) TCPAD.hidden = block || !TOUCH;
+  if (block) {
+    /* drop every held finger and pause a run in progress — the knight must not
+       take hits behind an overlay nobody can see past */
+    for (const id in TC_PTR) tcUp(id);
+    IN.held = {}; IN.buf = {};
+    if (GAME.mode === 'play') GAME.mode = 'paused';
+  }
+}
+
 addEventListener('resize', resize);
 addEventListener('orientationchange', function () { setTimeout(resize, 120); });
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', resize);
+  visualViewport.addEventListener('scroll', resize);
+}
+try { matchMedia('(orientation:portrait)').addEventListener('change', resize); } catch (_) { }
 resize();
 
 buildProps();
