@@ -62,17 +62,18 @@ Kod, kaynak içinde numaralandırılmış banner yorumlarıyla ayrılmıştır. 
 | 24 | SCREEN-SPACE EFFECTS | 4611 | Hasar vinyeti, parry flaşı, yıldız FX, vignette, scanline |
 | 25 | TITLE / VICTORY / DEFEAT | 4658 | Logo, başlık ekranı, bitiş ekranları, pause |
 | 26 | MAIN LOOP | 4759 | `ambientTick`, `updatePlay`, `renderPlay`, `frame` |
-| 26b | ON-SCREEN CONTROLS | 4909 | Dokunmatik pad'ler, `TOUCH` tespiti, çok parmak sayacı |
-| 27 | BOOT | 4972 | `resize`, props/arena/warm kuyruğu inşası, ilk `requestAnimationFrame` |
+| 26b | DEVICE PROFILE + ON-SCREEN CONTROLS | ~4915 | `TOUCH` tespiti, `DEV` cihaz profili, `viewW/viewH`, dokunmatik pad'ler, çok parmak sayacı |
+| 27 | BOOT | ~4995 | `resize` (cihaz-pikseli ölçekleme), `sizeTouchPads`, `updateOrientationGate`, props/arena/warm inşası, ilk `requestAnimationFrame` |
+
+> Satır numaraları yaklaşıktır ve düzenlemelerle kayar; bölüm banner'ları otoritedir.
 
 ---
 
 ## 3. Grafik Tarzı — "32-bit el yapımı pixel art"
 
 ### 3.1 Temel kurallar
-- **Dahili çözünürlük sabit: `VW=480 × VH=270`.** Canvas CSS ile ölçeklenir;
-  `resize()` mümkün olduğunda **tam sayı ölçek** kullanır (`s = fl(s)` eğer `s >= 1`),
-  böylece piksel keskin kalır. CSS'te `image-rendering: pixelated` ve
+- **Dahili çözünürlük sabit: `VW=480 × VH=270`.** Canvas CSS ile ölçeklenir; ölçekleme
+  kuralları bölüm 8'de. CSS'te `image-rendering: pixelated` ve
   `ctx.imageSmoothingEnabled = false` her yerde zorunludur.
 - **Anti-aliasing yok.** Her koordinat `fl()` ile ızgaraya oturtulur. Yumuşak geçişler
   blur ile değil, **dither** (`dith`) ve katmanlı yarı-saydam sert kenarlı şekillerle yapılır
@@ -289,8 +290,10 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
 
 ## 7. Mobil / Dokunmatik Katman (Bölüm 26b)
 
-- **Tespit:** `location.hash === '#touch'` (zorla aç) / `'#notouch'` (zorla kapat) →
-  `matchMedia('(pointer:coarse)')` → `ontouchstart` / `maxTouchPoints`.
+- **Tespit (`TOUCH`):** `location.hash === '#touch'` (zorla aç) / `'#notouch'` (zorla kapat) →
+  `matchMedia('(pointer:coarse)')` → *hiç ince işaretçi yoksa* (`!(any-pointer:fine)`)
+  `ontouchstart`/`maxTouchPoints`. İkinci adım kasıtlıdır: **dokunmatik ekranlı bir dizüstü**
+  `maxTouchPoints > 0` bildirir ama klavyesi ve faresi vardır — ona başparmak pad'i verilmez.
 - Pad'ler HTML'de `<div id="tc">` içinde durur, `data-act` özniteliğiyle **klavyeyle aynı
   aksiyon adlarına** bağlanır (`left/right/jump/roll/light/heavy/guard/flask/pause/mute`).
   Bu yüzden oyun mantığında dokunmatiğe özel tek bir satır bile yoktur.
@@ -298,15 +301,76 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   referans sayımı yapılır; aynı aksiyona ikinci parmak `IN.down`'ı tekrar tetiklemez,
   ilk parmağın kalkması aksiyonu bırakmaz. `setPointerCapture` + global `pointerup/cancel/blur`
   temizliği ile "yapışan tuş" engellenir.
-- Yerleşim CSS değişkeni `--u` ile ölçeklenir (62px → kısa ekranlarda 52px → 44px),
-  `env(safe-area-inset-*)` ile çentik/ev düğmesi güvenli alanına saygı duyar.
+- **Pad boyutu JS'ten gelir.** `sizeTouchPads()` `--u`'yu **kısa ekran kenarının %17'si**,
+  `[42, 84] px` arasına kırpılmış olarak verir; `--gap` de `u`'nun %18'i. Sabit 62px bir buton
+  küçük telefonda başparmağı yutar, tablette pul gibi kalır. CSS'teki değerler yalnızca
+  ilk `resize()` gelene kadar geçerli yedeklerdir.
   Buton boyutu önemi yansıtır: `heavy` 1.2×, `light` 1.05×, `flask` 0.88×.
+- `env(safe-area-inset-*)` çentik/ev düğmesi alanına saygı duyar — bu **yalnızca** viewport
+  meta etiketindeki `viewport-fit=cover` sayesinde çalışır; o kaldırılırsa insetler sessizce
+  sıfırlanır.
 - Başlık ve bitiş ekranlarında **oyun alanına dokunmak** `start` sayılır.
-- Dokunmatik modda `resize()` dikey pad'i sıfırlar (`pad = 0`) ve klavye ipucu satırı gizlenir.
+- **Ekran metinleri cihaza duyarlıdır.** Başlık/pause/bitiş ekranları ve ilk-oyun ipucu
+  `TOUCH` durumuna göre dallanır: dokunmatikte "TAP TO BEGIN" / "TAP TO RISE AGAIN" /
+  "TAP II TO CONTINUE" ve klavye tuş listesi yerine tek satırlık parry ipucu gösterilir.
+  **Yeni bir istem metni eklerken bu dallanmayı koru** — mobilde "PRESS ENTER" yazmak yalandır.
+  Pause ekranı dokunmatikte "abandon" satırını hiç göstermez, çünkü `restart` (`R`) aksiyonunun
+  pad karşılığı yoktur.
 
 ---
 
-## 8. Performans Sözleşmeleri
+## 8. Sunum: Ölçekleme ve Yönlendirme (Bölüm 27)
+
+### 8.1 Cihaz profili (`DEV`)
+Her `resize()` çağrısında `profileDevice()` tazelenir:
+`{ touch, kind, portrait, dpr, vw, vh, scale, unit, integer }`.
+- `kind`: `'desktop'` (dokunmatik değilse) · aksi hâlde **kısa kenar** `>= 480` CSS px ise
+  `'tablet'`, değilse `'phone'`. Kısa kenar yönden bağımsızdır, yani telefon çevrilince
+  telefon kalır.
+- Ölçüler `visualViewport`'tan okunur (`viewW/viewH`), `innerWidth/Height`'tan değil:
+  mobilde adres çubuğu girip çıkarken dürüst olan tek kaynak odur.
+
+### 8.2 Ölçek seçimi — **cihaz pikselinde tam sayı**
+Bir oyun pikseli **tam sayıda fiziksel piksel** kaplamalıdır; yoksa kamera kaydıkça
+sütun genişlikleri değişir ("kaynayan piksel") ve bu, bu sanat tarzının gizleyemediği
+tek bozulmadır. Bu yüzden yuvarlama CSS pikselinde değil, `fit × dpr` üzerinde yapılır.
+
+- **Masaüstü: her zaman tam sayı.** Ekran geniştir, letterbox ucuzdur.
+- **El cihazı: tam sayı yalnızca ucuzsa** — `INT_SCALE_FILL = 0.86`, yani tam sayı adım
+  sığdırılmış boyutun %86'sından azını kaplayacaksa kesirli ölçek alınır ve ekran doldurulur.
+  Gerekçe: dpr 2–3'te bir cihaz pikselliği fark ~0.1 mm'dir, gözle görünmez; küçük bir
+  telefonda ekranın beşte birini kaybetmek ise görünür.
+
+Doğrulanmış çıktılar:
+
+| Cihaz | Sonuç | Cihaz px / oyun px |
+|---|---|---|
+| PC 1920×1080 dpr1 | 1440×810 | 3 (tam) |
+| PC retina 1280×800 dpr2 | 1200×675 | 5 (tam) |
+| PC 4K dpr1 | 3360×1890 | 7 (tam) |
+| Telefon 844×390 dpr3 | 640×360 | 4 (tam) |
+| Telefon 640×360 dpr2 | 640×360 | 2.67 (kesirli, tam ekran) |
+| Tablet 1024×768 dpr2 | 960×540 | 4 (tam) |
+
+`document.body.style.height` de `DEV.vh`'ye sabitlenir, böylece canvas tarayıcı çubuğu
+geri geldiğinde onun arkasında kalmaz.
+
+### 8.3 Dikey mod kapısı
+`updateOrientationGate()` — **yalnızca dokunmatik cihazlarda** ve yalnızca `vh > vw` iken:
+- `#rot` katmanı açılır: dönen telefon SVG'si + **"PLEASE ROTATE YOUR DEVICE"** ve
+  **"ASHFALL IS PLAYED IN LANDSCAPE"**. Oyunun paletiyle aynı (altın `#b8963f`, zemin
+  `#05060a`) ve aynı scanline'ı taşır. `prefers-reduced-motion` animasyonu kapatır.
+- Pad'ler gizlenir, tutulan bütün parmaklar `tcUp` ile bırakılır, `IN.held`/`IN.buf` temizlenir.
+- Oyun **oynanıyorsa `paused`'a alınır** — şövalye görünmeyen bir katmanın ardında dayak yemez.
+- `GAME.blocked = true` olur; `frame()` bu bayrakta **hiçbir şey tiklemeden** çıkar
+  (`lastT` yine de ilerletilir, böylece geri dönüşte birikmiş bir kare işlenmez).
+
+Kapı `resize`, `orientationchange`, `visualViewport.resize/scroll` ve
+`matchMedia('(orientation:portrait)')` olaylarının hepsinden tazelenir.
+
+---
+
+## 9. Performans Sözleşmeleri
 
 Bunlar ihlal edilirse oyun mobilde çöker — değişiklik yaparken korunmalıdır:
 
@@ -324,7 +388,7 @@ Bunlar ihlal edilirse oyun mobilde çöker — değişiklik yaparken korunmalıd
 
 ---
 
-## 9. Kod Sözleşmeleri
+## 10. Kod Sözleşmeleri
 
 - **Tek dosya, `'use strict'`, ES5+ düz JS.** Modül, build adımı, bağımlılık yok.
 - Kısaltmalar bilinçlidir: `fl/ce/ab/mn/mx` = `Math.floor/ceil/abs/min/max`, `r/px/ra` = dikdörtgen çizim.
@@ -340,7 +404,7 @@ Bunlar ihlal edilirse oyun mobilde çöker — değişiklik yaparken korunmalıd
 
 ---
 
-## 10. Bilinen Tuhaflıklar / Ölü Kod
+## 11. Bilinen Tuhaflıklar / Ölü Kod
 
 Değiştirmeden önce bilinmesi gerekenler:
 
@@ -364,7 +428,7 @@ Değiştirmeden önce bilinmesi gerekenler:
 
 ---
 
-## 11. Değişiklik Yaparken Kontrol Listesi
+## 12. Değişiklik Yaparken Kontrol Listesi
 
 1. Yeni renk mi gerekiyor? Önce `P` paletine bak — muhtemelen zaten var.
 2. Yeni sprite mi? `bakeInto` + `SPR.get`/`SPR.cache` üzerinden geç, `finish()` seçeneklerini
@@ -376,4 +440,9 @@ Değiştirmeden önce bilinmesi gerekenler:
    **üçü birden** olmadan saldırı okunamaz hâle gelir; okunabilirlik bu oyunun sözleşmesidir.
 6. Dengeleme değeri mi? `PLC` / `ETUNE` / `BATK` / `BOSS` içindeki tek noktadan değiştir;
    sihirli sayıyı mantığın içine gömme.
-7. Her değişiklikten sonra hem masaüstünde (fare + klavye) hem `#touch` hash'iyle test et.
+7. Ekrana yeni bir istem/ipucu metni mi yazıyorsun? `TOUCH` üzerinden dallandır —
+   dokunmatikte tuş adı ("PRESS ENTER", "LMB") yazmak yalandır (bkz. bölüm 7).
+8. Ana döngüye yeni bir iş mi ekliyorsun? `frame()` içindeki `GAME.blocked` erken çıkışının
+   **üstünde** değil altında olduğundan emin ol; dikey moddayken hiçbir şey tiklememelidir.
+9. Her değişiklikten sonra hem masaüstünde (fare + klavye) hem `#touch` hash'iyle test et;
+   dokunmatikte **her iki yönü de** dene — dikey mod kapısı ayrı bir kod yoludur.
