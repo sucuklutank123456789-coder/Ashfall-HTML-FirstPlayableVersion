@@ -306,6 +306,19 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   küçük telefonda başparmağı yutar, tablette pul gibi kalır. CSS'teki değerler yalnızca
   ilk `resize()` gelene kadar geçerli yedeklerdir.
   Buton boyutu önemi yansıtır: `heavy` 1.2×, `light` 1.05×, `flask` 0.88×.
+- **Butonlarda yazı değil, pişmiş piksel ikon var** (`buildPadIcons`, bölüm 26b).
+  Her ikon **16×16** kaynak olarak oyunun kendi primitifleriyle (`r`, `px`, `ell`, `seg`,
+  `dome`, `mixc`) ve `P` paletiyle çizilir, sprite'larla aynı `finish()` ay rim'ini alır
+  (`rim 1.10`), sonra `toDataURL()` ile `background-image`'a girer. Dış dosya yok.
+  **İkon rengi ne yaptığını söyler:** flask kızıl iksir + altın kapak, guard çelik kalkan +
+  altın göbek, light ince kılıç, heavy geniş kılıç + altın kıvılcım, roll mavi dönme oku,
+  jump yeşil ok + zemin çizgisi.
+  Boyut `--icon` ile verilir ve **16'nın tam katıdır** (`u*0.52` en yakın kata yuvarlanır,
+  1–4× arası): 1.7× bir piksel ikon şişman ve ince sütunlar üretir.
+  `tcMuteLabel()` sesi açıp kapadıkça `sound` ↔ `muted` ikonunu değiştirir.
+- **Yön tuşları ayrı aralıklanır:** hareket satırı `gap`'i normalin **2.6×**'ı ve
+  `padding-left: u*0.22` ile biraz sağa alınmıştır. Başparmak birinden diğerine kayarken
+  boşluğu hissetmeli, ikisine birden basmamalı.
 - `env(safe-area-inset-*)` çentik/ev düğmesi alanına saygı duyar — bu **yalnızca** viewport
   meta etiketindeki `viewport-fit=cover` sayesinde çalışır; o kaldırılırsa insetler sessizce
   sıfırlanır.
@@ -314,6 +327,8 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   `TOUCH` durumuna göre dallanır: dokunmatikte "TAP TO BEGIN" / "TAP TO RISE AGAIN" /
   "TAP II TO CONTINUE" ve klavye tuş listesi yerine tek satırlık parry ipucu gösterilir.
   **Yeni bir istem metni eklerken bu dallanmayı koru** — mobilde "PRESS ENTER" yazmak yalandır.
+  Butonlar artık yazı taşımadığı için metinler onlara **adla değil şeyle** atıfta bulunur
+  ("TAP THE SHIELD", "TAP II"), aksi hâlde ekranda olmayan bir kelimeyi işaret ederler.
 - **`QUIT` pad'i (`restart`) bağlamsaldır.** `tcSyncQuit()` onu yalnızca `GAME.mode === 'paused'`
   iken gösterir ve `.hidden` yazmasını yalnızca durum *değiştiğinde* yapar (kare başına DOM
   yazımı yok). Gerekçe klavyeyle birebir aynı: `R` de sadece `paused` içinde okunur, oyun
@@ -439,7 +454,8 @@ Değiştirmeden önce bilinmesi gerekenler:
    komşu varlıklarla tutarlı tut (şövalye `rim 1.23`, goblin `1.22`, boss `1.17`).
 3. Yeni animasyon mu? İlgili tabloya (`KA`/`GA`/`BA`) ekle; `buildWarmQueue` gerisini halleder.
 4. Yeni aksiyon mu? `KEYMAP`'e **ve** `#tc` içindeki bir butonun `data-act`'ine ekle,
-   yoksa mobilde erişilemez olur.
+   yoksa mobilde erişilemez olur. Buton bir **ikon** ister: `buildPadIcons` içine 16×16
+   çiz ve `ICON_FOR`'a bağla — yazı koyma, pad'lerin dili ikondur.
 5. Yeni boss saldırısı mı? `BA` (poz) + `BATK` (kutu/hasar) + `BTELL` (telegraph) —
    **üçü birden** olmadan saldırı okunamaz hâle gelir; okunabilirlik bu oyunun sözleşmesidir.
 6. Dengeleme değeri mi? `PLC` / `ETUNE` / `BATK` / `BOSS` içindeki tek noktadan değiştir;

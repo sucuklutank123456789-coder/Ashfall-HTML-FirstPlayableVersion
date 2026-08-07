@@ -40,7 +40,7 @@
   /* ---------------- on-screen (touch) controls ---------------- */
   #tc{
     position:fixed;inset:0;z-index:20;pointer-events:none;
-    --u:62px;--gap:11px;
+    --u:62px;--gap:11px;--icon:32px;
     font-family:ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;
   }
   #tc[hidden]{display:none;}
@@ -51,33 +51,35 @@
     pointer-events:auto;-webkit-tap-highlight-color:transparent;
     -webkit-appearance:none;appearance:none;
     width:var(--u);height:var(--u);border-radius:50%;
-    border:1px solid #3a3f49;background:rgba(9,11,16,0.55);
+    border:1px solid #3a3f49;background-color:rgba(9,11,16,0.55);
     color:#8f9aa8;font-family:inherit;font-size:10px;letter-spacing:1px;
     line-height:1;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:2px;
     box-shadow:0 0 0 1px rgba(0,0,0,0.55), 0 3px 12px rgba(0,0,0,0.6);
     touch-action:none;user-select:none;-webkit-user-select:none;
-    transition:transform .05s linear, background .05s linear, color .05s linear;
+    transition:transform .05s linear, background-color .05s linear, border-color .05s linear;
     backdrop-filter:blur(1px);
+    /* the glyph is a baked pixel icon (buildPadIcons), sized to an integer
+       multiple of its 16px source so it never lands between pixels */
+    background-repeat:no-repeat;background-position:center;
+    background-size:var(--icon) var(--icon);
+    image-rendering:pixelated;image-rendering:crisp-edges;
   }
-  .tb b{font-weight:400;font-size:10px;}
-  .tb i{font-style:normal;font-size:7px;letter-spacing:1px;color:#5b6470;}
-  .tb.on{background:rgba(70,57,26,0.88);color:#e9d49c;border-color:#b8963f;transform:scale(0.93);}
-  .tb.on i{color:#b8963f;}
+  .tb.on{background-color:rgba(70,57,26,0.88);border-color:#b8963f;transform:scale(0.93);}
 
-  .tb.move{font-size:22px;color:#9aa5b3;}
-  .tb.roll{border-color:#40566b;color:#8fb0c8;}
-  .tb.jump{border-color:#3f5a44;color:#8dbb84;}
-  .tb.guard{border-color:#40566b;color:#8fb0c8;}
-  .tb.light{width:calc(var(--u)*1.05);height:calc(var(--u)*1.05);border-color:#5a4c36;color:#c3ab80;}
-  .tb.heavy{width:calc(var(--u)*1.2);height:calc(var(--u)*1.2);border-color:#6b4a30;color:#cfa06e;}
-  .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;color:#c79a9a;}
-  .tb.sys{width:36px;height:30px;border-radius:7px;font-size:10px;color:#79828f;}
-  .tb.sys.muted{color:#7a5652;border-color:#6b4844;text-decoration:line-through;}
-  /* abandoning a run is destructive, so it wears the blood colour and only
-     appears on the pause screen — see tcSyncQuit() */
-  .tb.sys.quit{width:42px;color:#a8635c;border-color:#6b3a38;}
-  .tb.sys.quit.on{background:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
+  .tb.roll{border-color:#40566b;}
+  .tb.jump{border-color:#3f5a44;}
+  .tb.guard{border-color:#40566b;}
+  .tb.light{width:calc(var(--u)*1.05);height:calc(var(--u)*1.05);border-color:#5a4c36;}
+  .tb.heavy{width:calc(var(--u)*1.2);height:calc(var(--u)*1.2);border-color:#6b4a30;}
+  .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;}
+  .tb.sys{width:36px;height:30px;border-radius:7px;background-size:16px 16px;}
+  .tb.sys.muted{border-color:#6b4844;}
+  /* abandoning a run is destructive, so it keeps a word rather than a glyph
+     you could misread, wears the blood colour, and only appears on the pause
+     screen — see tcSyncQuit() */
+  .tb.sys.quit{width:42px;font-size:10px;color:#a8635c;border-color:#6b3a38;}
+  .tb.sys.quit.on{background-color:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
   .tb[hidden]{display:none;}
 
   .tc-row{display:flex;gap:var(--gap);align-items:flex-end;}
@@ -86,7 +88,10 @@
     left:calc(12px + env(safe-area-inset-left,0px));
     bottom:calc(12px + env(safe-area-inset-bottom,0px));
   }
-  .tc-left .tc-row:first-child{padding-left:calc(var(--u)*0.30);}
+  .tc-left .tc-row:first-child{padding-left:calc(var(--u)*0.44);}
+  /* the two directions want daylight between them — a thumb rolling from one
+     to the other should feel the gap, not smear across both at once */
+  .tc-left .tc-row:last-child{gap:calc(var(--gap)*2.6);padding-left:calc(var(--u)*0.22);}
   .tc-right{
     position:absolute;display:flex;flex-direction:column;gap:var(--gap);align-items:flex-end;
     right:calc(12px + env(safe-area-inset-right,0px));
@@ -149,29 +154,29 @@
 <div id="tc" hidden>
   <div class="tc-sys">
     <button class="tb sys quit" id="tb-quit" data-act="restart" aria-label="abandon the run" hidden>QUIT</button>
-    <button class="tb sys" data-act="pause" aria-label="pause">II</button>
-    <button class="tb sys" id="tb-mute" data-act="mute" aria-label="mute">MUTE</button>
+    <button class="tb sys" data-act="pause" aria-label="pause"></button>
+    <button class="tb sys" id="tb-mute" data-act="mute" aria-label="sound"></button>
   </div>
   <div class="tc-left">
     <div class="tc-row">
-      <button class="tb flask" data-act="flask"><b>FLASK</b></button>
+      <button class="tb flask" data-act="flask" aria-label="drink flask"></button>
     </div>
     <div class="tc-row">
-      <button class="tb move" data-act="left" aria-label="left">&#9664;</button>
-      <button class="tb move" data-act="right" aria-label="right">&#9654;</button>
+      <button class="tb move" data-act="left" aria-label="move left"></button>
+      <button class="tb move" data-act="right" aria-label="move right"></button>
     </div>
   </div>
   <div class="tc-right">
     <div class="tc-row">
-      <button class="tb guard" data-act="guard"><b>GUARD</b><i>PARRY</i></button>
+      <button class="tb guard" data-act="guard" aria-label="guard and parry"></button>
     </div>
     <div class="tc-row">
-      <button class="tb light" data-act="light"><b>LIGHT</b></button>
-      <button class="tb heavy" data-act="heavy"><b>HEAVY</b></button>
+      <button class="tb light" data-act="light" aria-label="light attack"></button>
+      <button class="tb heavy" data-act="heavy" aria-label="heavy attack"></button>
     </div>
     <div class="tc-row">
-      <button class="tb roll" data-act="roll"><b>ROLL</b></button>
-      <button class="tb jump" data-act="jump"><b>JUMP</b></button>
+      <button class="tb roll" data-act="roll" aria-label="roll"></button>
+      <button class="tb jump" data-act="jump" aria-label="jump"></button>
     </div>
   </div>
 </div>
@@ -4668,7 +4673,7 @@ function drawHUD() {
   if (GAME.t < 9 && !GAME.arenaLocked && !PL.dead) {
     const a = clamp(mn(GAME.t, 9 - GAME.t) / 1.2, 0, 1);
     const s = TOUCH
-      ? 'TAP GUARD THE MOMENT A BLOW LANDS TO PARRY IT'
+      ? 'TAP THE SHIELD THE MOMENT A BLOW LANDS TO PARRY'
       : 'LMB LIGHT   RMB HEAVY   Q GUARD (TAP TO PARRY)   S ROLL   E FLASK';
     const w = textW(s, 1, 1);
     ctx.globalAlpha = a * 0.72;
@@ -4792,7 +4797,7 @@ function drawTitle() {
     if ((WT % 1.2) < 0.75) textC(ctx, 'TAP TO BEGIN', VW / 2, 196, P.gldHi, 2, 2, true);
     ra(ctx, 0, 234, VW, 28, '#05070a', 0.72);
     r(ctx, 0, 234, VW, 1, '#1b2029');
-    textC(ctx, 'TAP GUARD AS THE BLOW LANDS TO PARRY', VW / 2, 240, '#79838f', 1, 1, true);
+    textC(ctx, 'TAP THE SHIELD AS THE BLOW LANDS TO PARRY', VW / 2, 240, '#79838f', 1, 1, true);
     textC(ctx, 'II  PAUSE          MUTE  SOUND', VW / 2, 252, '#4f5866', 1, 1, true);
   } else {
     if ((WT % 1.2) < 0.75) textC(ctx, 'PRESS ENTER', VW / 2, 198, P.gldHi, 2, 2, true);
@@ -5059,7 +5064,9 @@ function tcUp(id) {
 }
 function tcMuteLabel() {
   const m = document.getElementById('tb-mute');
-  if (m) m.classList.toggle('muted', !!AUD.muted);
+  if (!m) return;
+  m.classList.toggle('muted', !!AUD.muted);
+  if (ICON.sound) m.style.backgroundImage = 'url(' + (AUD.muted ? ICON.muted : ICON.sound) + ')';
 }
 /* QUIT only exists while the run is paused — the same reach the keyboard has,
    where R is read in 'paused' and nowhere during play. A pad that could throw
@@ -5072,6 +5079,134 @@ function tcSyncQuit() {
   const q = document.getElementById('tb-quit');
   if (q) q.hidden = !want;
 }
+/* ---- pad icons ------------------------------------------------------
+   Drawn with the same primitives and palette as the sprites, so the
+   controls speak the game's language instead of sitting on top of it in
+   a UI font. 16x16 sources, baked once at boot into data URIs and shown
+   at an integer multiple so they never land between pixels.
+   Each glyph carries the colour of the thing it does: the flask is full
+   of crimson, the shield is steel with a gold boss, the heavy blow
+   throws gold sparks.                                                  */
+const ICON_SRC = 16;
+const ICON = {};
+function icon(key, fn) {
+  const cv = mkcv(ICON_SRC, ICON_SRC);
+  fn(gc(cv));
+  finish(cv, { rim: 1.10, rimAdd: 4, bot: 0.78 });   /* same moon rim the sprites get */
+  ICON[key] = cv.toDataURL();
+}
+function buildPadIcons() {
+  /* the health flask — crimson draught under a gold cap */
+  icon('flask', function (g) {
+    ell(g, 8, 10.4, 5.4, 4.6, '#2a1418');            /* glass */
+    ell(g, 8, 10.8, 4.4, 4.0, P.cl);                 /* the draught */
+    r(g, 4, 12, 9, 3, P.clS);
+    ell(g, 7, 10.2, 2.4, 1.9, P.clHi);
+    r(g, 6, 3, 4, 4, '#33202a');                     /* neck */
+    r(g, 6, 3, 1, 4, '#4a2f38');
+    r(g, 5, 0, 6, 3, P.gld);                         /* cap */
+    r(g, 5, 0, 6, 1, P.gldHi);
+    r(g, 5, 2, 6, 1, P.gldD);
+    px(g, 5, 9, '#e8a09a'); px(g, 5, 10, '#c9807c'); /* glint */
+  });
+  /* the heater shield */
+  icon('guard', function (g) {
+    for (let y = 0; y < 15; y++) {
+      const t = y / 14;
+      const hw = t < 0.42 ? 6.2 : 6.2 * (1 - Math.pow((t - 0.42) / 0.58, 1.6));
+      if (hw < 0.5) continue;
+      for (let x = -7; x <= 7; x++) {
+        if (ab(x) > hw) continue;
+        /* rounded across, not split down the middle */
+        let col = P.stl;
+        if (x < -hw * 0.62) col = P.stlHi;
+        else if (x > hw * 0.68) col = P.stlD;
+        else if (x < -hw * 0.15) col = P.stlLt;
+        if (y === 0) col = P.stlHi;
+        if (y > 11) col = mixc(col, P.stlS, 0.45);      /* the point falls into shadow */
+        px(g, 8 + x, y, col);
+      }
+    }
+    /* the boss, a centred gold diamond */
+    px(g, 8, 4, P.gldHi);
+    r(g, 7, 5, 3, 1, P.gld); px(g, 7, 5, P.gldHi);
+    r(g, 6, 6, 5, 1, P.gld); px(g, 6, 6, P.gldHi);
+    r(g, 7, 7, 3, 1, P.gldD);
+    px(g, 8, 8, P.gldS);
+    px(g, 3, 2, P.gldD); px(g, 13, 2, P.gldD);          /* rivets */
+  });
+  /* light attack — the arming sword alone */
+  icon('light', function (g) {
+    seg(g, 4.5, 11.5, 13, 3, 2.6, { hi: P.stlHi, base: P.stlLt, sh: P.stlM, taper: 0.4 });
+    seg(g, 2.5, 9.5, 6.5, 13.5, 2, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
+    seg(g, 4, 12.5, 1.5, 15, 2.2, M_LEA);
+    px(g, 13, 3, P.stlHi);
+  });
+  /* heavy attack — a broader blade, and the blow already landing */
+  icon('heavy', function (g) {
+    seg(g, 4.5, 11.5, 12.5, 3.5, 4.2, { hi: P.stlHi, base: P.stl, sh: P.stlD, taper: 0.26 });
+    seg(g, 2, 9.5, 7, 14, 2.8, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
+    seg(g, 4, 12.5, 1, 15.5, 2.6, M_LEA);
+    px(g, 14, 1, P.gldHi); px(g, 12, 0, P.gld);
+    px(g, 15, 3, P.gld); px(g, 15, 0, P.gldHi);
+  });
+  /* roll — a turn, with the arrow chasing it round */
+  icon('roll', function (g) {
+    /* the turn, opened at the top right so the arrow has somewhere to go */
+    for (let a = 0; a < TAU; a += 0.035) {
+      const d = a * 180 / PI;
+      if (d > 262 && d < 332) continue;
+      px(g, 8 + cos(a) * 5.2, 8 + sin(a) * 5.2, '#b4cfe2');
+      px(g, 8 + cos(a) * 4.0, 8 + sin(a) * 4.0, '#7d9db8');
+    }
+    /* arrowhead carrying on clockwise */
+    r(g, 9, 0, 1, 7, '#cfe4f2');
+    r(g, 10, 1, 1, 5, '#b4cfe2');
+    r(g, 11, 2, 1, 3, '#b4cfe2');
+    px(g, 12, 3, '#8fb0c8');
+  });
+  /* jump — up, off the stone */
+  icon('jump', function (g) {
+    for (let i = 0; i < 5; i++) r(g, 7 - i, 2 + i, 2 + i * 2, 1, i < 2 ? '#c8e8ba' : '#a8d49c');
+    r(g, 7, 7, 2, 5, '#a8d49c');
+    r(g, 7, 7, 1, 5, '#c8e8ba');
+    r(g, 3, 13, 10, 2, '#4a6b46');
+    r(g, 3, 13, 10, 1, '#6d9463');
+  });
+  /* the two directions */
+  icon('right', function (g) {
+    for (let x = 0; x < 8; x++) { const h = 7 - x; r(g, 5 + x, 8 - h, 1, h * 2 + 1, '#9aa5b3'); }
+    for (let x = 0; x < 7; x++) px(g, 5 + x, 8 - (7 - x), '#c2cdd9');
+  });
+  icon('left', function (g) {
+    for (let x = 0; x < 8; x++) { const h = 7 - x; r(g, 10 - x, 8 - h, 1, h * 2 + 1, '#9aa5b3'); }
+    for (let x = 0; x < 7; x++) px(g, 10 - x, 8 - (7 - x), '#c2cdd9');
+  });
+  /* system row */
+  icon('pause', function (g) {
+    r(g, 4, 3, 3, 10, '#9aa5b3'); r(g, 4, 3, 3, 1, '#c2cdd9');
+    r(g, 9, 3, 3, 10, '#9aa5b3'); r(g, 9, 3, 3, 1, '#c2cdd9');
+  });
+  const speaker = function (g) {
+    r(g, 2, 6, 3, 4, '#9aa5b3');
+    for (let i = 0; i < 4; i++) { const h = 4 + i * 2; r(g, 5 + i, 8 - h / 2, 1, h, i < 2 ? '#aab5c3' : '#9aa5b3'); }
+    r(g, 2, 6, 3, 1, '#c2cdd9');
+  };
+  icon('sound', function (g) {
+    speaker(g);
+    r(g, 10, 6, 1, 4, '#8fb0c8'); r(g, 12, 4, 1, 8, '#6f90ab'); r(g, 14, 2, 1, 12, '#54748c');
+  });
+  icon('muted', function (g) {
+    speaker(g);
+    for (let i = 0; i < 6; i++) { px(g, 10 + i, 4 + i, '#c07b76'); px(g, 10 + i, 5 + i, '#8e5a56'); }
+  });
+}
+buildPadIcons();
+const ICON_FOR = {
+  left: 'left', right: 'right', jump: 'jump', roll: 'roll', light: 'light',
+  heavy: 'heavy', guard: 'guard', flask: 'flask', pause: 'pause', mute: 'sound'
+};
+
 if (TOUCH && TCPAD) {
   TCPAD.hidden = false;
   const hintEl = document.getElementById('hint');
@@ -5079,6 +5214,8 @@ if (TOUCH && TCPAD) {
   const pads = TCPAD.querySelectorAll('.tb');
   for (let i = 0; i < pads.length; i++) {
     const el = pads[i], act = el.getAttribute('data-act');
+    const ic = ICON_FOR[act];
+    if (ic) el.style.backgroundImage = 'url(' + ICON[ic] + ')';
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault(); e.stopPropagation();
       AUD.unlock();
@@ -5151,6 +5288,9 @@ function sizeTouchPads() {
   const u = clamp(Math.round(mn(DEV.vw, DEV.vh) * 0.17), 42, 84);
   TCPAD.style.setProperty('--u', u + 'px');
   TCPAD.style.setProperty('--gap', clamp(Math.round(u * 0.18), 6, 16) + 'px');
+  /* the glyph fills about half the pad, rounded to a whole multiple of its
+     16px source — a pixel icon at 1.7x has fatter columns than thin ones */
+  TCPAD.style.setProperty('--icon', ICON_SRC * clamp(Math.round(u * 0.52 / ICON_SRC), 1, 4) + 'px');
   DEV.unit = u;
 }
 
