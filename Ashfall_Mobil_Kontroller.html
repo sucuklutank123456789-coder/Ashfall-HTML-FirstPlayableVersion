@@ -40,7 +40,7 @@
   /* ---------------- on-screen (touch) controls ---------------- */
   #tc{
     position:fixed;inset:0;z-index:20;pointer-events:none;
-    --u:62px;--gap:11px;
+    --u:62px;--gap:11px;--icon:32px;
     font-family:ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;
   }
   #tc[hidden]{display:none;}
@@ -51,33 +51,35 @@
     pointer-events:auto;-webkit-tap-highlight-color:transparent;
     -webkit-appearance:none;appearance:none;
     width:var(--u);height:var(--u);border-radius:50%;
-    border:1px solid #3a3f49;background:rgba(9,11,16,0.55);
+    border:1px solid #3a3f49;background-color:rgba(9,11,16,0.55);
     color:#8f9aa8;font-family:inherit;font-size:10px;letter-spacing:1px;
     line-height:1;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:2px;
     box-shadow:0 0 0 1px rgba(0,0,0,0.55), 0 3px 12px rgba(0,0,0,0.6);
     touch-action:none;user-select:none;-webkit-user-select:none;
-    transition:transform .05s linear, background .05s linear, color .05s linear;
+    transition:transform .05s linear, background-color .05s linear, border-color .05s linear;
     backdrop-filter:blur(1px);
+    /* the glyph is a baked pixel icon (buildPadIcons), sized to an integer
+       multiple of its 16px source so it never lands between pixels */
+    background-repeat:no-repeat;background-position:center;
+    background-size:var(--icon) var(--icon);
+    image-rendering:pixelated;image-rendering:crisp-edges;
   }
-  .tb b{font-weight:400;font-size:10px;}
-  .tb i{font-style:normal;font-size:7px;letter-spacing:1px;color:#5b6470;}
-  .tb.on{background:rgba(70,57,26,0.88);color:#e9d49c;border-color:#b8963f;transform:scale(0.93);}
-  .tb.on i{color:#b8963f;}
+  .tb.on{background-color:rgba(70,57,26,0.88);border-color:#b8963f;transform:scale(0.93);}
 
-  .tb.move{font-size:22px;color:#9aa5b3;}
-  .tb.roll{border-color:#40566b;color:#8fb0c8;}
-  .tb.jump{border-color:#3f5a44;color:#8dbb84;}
-  .tb.guard{border-color:#40566b;color:#8fb0c8;}
-  .tb.light{width:calc(var(--u)*1.05);height:calc(var(--u)*1.05);border-color:#5a4c36;color:#c3ab80;}
-  .tb.heavy{width:calc(var(--u)*1.2);height:calc(var(--u)*1.2);border-color:#6b4a30;color:#cfa06e;}
-  .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;color:#c79a9a;}
-  .tb.sys{width:36px;height:30px;border-radius:7px;font-size:10px;color:#79828f;}
-  .tb.sys.muted{color:#7a5652;border-color:#6b4844;text-decoration:line-through;}
-  /* abandoning a run is destructive, so it wears the blood colour and only
-     appears on the pause screen — see tcSyncQuit() */
-  .tb.sys.quit{width:42px;color:#a8635c;border-color:#6b3a38;}
-  .tb.sys.quit.on{background:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
+  .tb.roll{border-color:#40566b;}
+  .tb.jump{border-color:#3f5a44;}
+  .tb.guard{border-color:#40566b;}
+  .tb.light{width:calc(var(--u)*1.05);height:calc(var(--u)*1.05);border-color:#5a4c36;}
+  .tb.heavy{width:calc(var(--u)*1.2);height:calc(var(--u)*1.2);border-color:#6b4a30;}
+  .tb.flask{width:calc(var(--u)*0.88);height:calc(var(--u)*0.88);border-color:#5c3a3a;}
+  .tb.sys{width:36px;height:30px;border-radius:7px;background-size:16px 16px;}
+  .tb.sys.muted{border-color:#6b4844;}
+  /* abandoning a run is destructive, so it keeps a word rather than a glyph
+     you could misread, wears the blood colour, and only appears on the pause
+     screen — see tcSyncQuit() */
+  .tb.sys.quit{width:42px;font-size:10px;color:#a8635c;border-color:#6b3a38;}
+  .tb.sys.quit.on{background-color:rgba(70,26,26,0.88);color:#e9b0a8;border-color:#a8635c;}
   .tb[hidden]{display:none;}
 
   .tc-row{display:flex;gap:var(--gap);align-items:flex-end;}
@@ -86,7 +88,10 @@
     left:calc(12px + env(safe-area-inset-left,0px));
     bottom:calc(12px + env(safe-area-inset-bottom,0px));
   }
-  .tc-left .tc-row:first-child{padding-left:calc(var(--u)*0.30);}
+  .tc-left .tc-row:first-child{padding-left:calc(var(--u)*0.44);}
+  /* the two directions want daylight between them — a thumb rolling from one
+     to the other should feel the gap, not smear across both at once */
+  .tc-left .tc-row:last-child{gap:calc(var(--gap)*2.6);padding-left:calc(var(--u)*0.22);}
   .tc-right{
     position:absolute;display:flex;flex-direction:column;gap:var(--gap);align-items:flex-end;
     right:calc(12px + env(safe-area-inset-right,0px));
@@ -149,29 +154,29 @@
 <div id="tc" hidden>
   <div class="tc-sys">
     <button class="tb sys quit" id="tb-quit" data-act="restart" aria-label="abandon the run" hidden>QUIT</button>
-    <button class="tb sys" data-act="pause" aria-label="pause">II</button>
-    <button class="tb sys" id="tb-mute" data-act="mute" aria-label="mute">MUTE</button>
+    <button class="tb sys" data-act="pause" aria-label="pause"></button>
+    <button class="tb sys" id="tb-mute" data-act="mute" aria-label="sound"></button>
   </div>
   <div class="tc-left">
     <div class="tc-row">
-      <button class="tb flask" data-act="flask"><b>FLASK</b></button>
+      <button class="tb flask" data-act="flask" aria-label="drink flask"></button>
     </div>
     <div class="tc-row">
-      <button class="tb move" data-act="left" aria-label="left">&#9664;</button>
-      <button class="tb move" data-act="right" aria-label="right">&#9654;</button>
+      <button class="tb move" data-act="left" aria-label="move left"></button>
+      <button class="tb move" data-act="right" aria-label="move right"></button>
     </div>
   </div>
   <div class="tc-right">
     <div class="tc-row">
-      <button class="tb guard" data-act="guard"><b>GUARD</b><i>PARRY</i></button>
+      <button class="tb guard" data-act="guard" aria-label="guard and parry"></button>
     </div>
     <div class="tc-row">
-      <button class="tb light" data-act="light"><b>LIGHT</b></button>
-      <button class="tb heavy" data-act="heavy"><b>HEAVY</b></button>
+      <button class="tb light" data-act="light" aria-label="light attack"></button>
+      <button class="tb heavy" data-act="heavy" aria-label="heavy attack"></button>
     </div>
     <div class="tc-row">
-      <button class="tb roll" data-act="roll"><b>ROLL</b></button>
-      <button class="tb jump" data-act="jump"><b>JUMP</b></button>
+      <button class="tb roll" data-act="roll" aria-label="roll"></button>
+      <button class="tb jump" data-act="jump" aria-label="jump"></button>
     </div>
   </div>
 </div>
@@ -3393,7 +3398,7 @@ const PL = {
   hp: PLC.maxHp, stam: PLC.maxStam, stamCd: 0, flasks: PLC.flasks,
   state: 'idle', st: 0, anim: 'idle', at: 0, frame: 0,
   iTime: 0, hurtT: 0, dead: false, deadT: 0, blockHold: false, parryT: 0,
-  hitDone: false, combo: 0, comboT: 0, capeK: 0, capeV: 0, lastGround: 60,
+  hitDone: false, combo: 0, comboT: 0, capeK: 0, capeV: 0, lastGround: 60, rollIF: false,
   landForce: 0, flashT: 0, stepPhase: 0, hitCount: 0,
   attackDamageDealt: false, guardBreak: 0, healT: 0, respawnT: 0,
   reset() {
@@ -3401,6 +3406,7 @@ const PL = {
     this.hp = PLC.maxHp; this.stam = PLC.maxStam; this.flasks = PLC.flasks;
     this.state = 'idle'; this.st = 0; this.anim = 'idle'; this.at = 0; this.frame = 0;
     this.iTime = 0; this.dead = false; this.deadT = 0; this.combo = 0; this.capeK = 0; this.capeV = 0;
+    this.rollIF = false;
     this.flashT = 0; this.guardBreak = 0; this.healT = 0; this.respawnT = 0; this.parryT = 0;
   },
   get cx() { return this.x; },
@@ -3479,11 +3485,13 @@ function plUpdate(dt) {
   /* ---- state behaviour ---- */
   const A = KA[p.anim];
   let allowMove = true, spd = PLC.runSpeed;
+  p.rollIF = false;                       /* set again below only while rolling */
   switch (p.state) {
     case 'roll': {
       allowMove = false;
       const t = p.st / PLC.rollDur;
-      p.iTime = (t > PLC.rollIFrames[0] / PLC.rollDur && t < PLC.rollIFrames[1] / PLC.rollDur) ? 0.02 : p.iTime;
+      p.rollIF = (t > PLC.rollIFrames[0] / PLC.rollDur && t < PLC.rollIFrames[1] / PLC.rollDur);
+      p.iTime = p.rollIF ? 0.02 : p.iTime;
       p.vx = p.face * PLC.rollSpeed * (1 - eIn(clamp(t, 0, 1)) * 0.55);
       if (p.onGround && (p.st % 0.07) < dt) FX.rollDust(p.x, p.y, p.face);
       if (p.st >= PLC.rollDur) { plSet(guardWanted ? 'block' : 'idle', guardWanted ? 'block' : 'idle'); }
@@ -3559,6 +3567,11 @@ function plUpdate(dt) {
 
   /* arena confinement */
   if (GAME.arenaLocked) p.x = clamp(p.x, LV.arenaX0 + 34, LV.arenaX1 - 10);
+  /* the barred portcullis holds the road until the last goblin is down */
+  if (gateBarred() && p.x > LV.gateX - 9) {
+    p.x = LV.gateX - 9;
+    if (p.vx > 0) p.vx = 0;
+  }
   p.x = clamp(p.x, 6, LV.w - 8);
 
   /* ---- collisions ---- */
@@ -3695,9 +3708,17 @@ function plStrike(heavy) {
 }
 
 /* damage taken by the player, routed through guard / parry / i-frames */
-function damagePlayer(amount, srcX, kind, contactY) {
+/* `answer` is the word the telegraph put over the boss's head. A blow that
+   names its answer can only be beaten that way: rolling under a swing that
+   asked to be parried is the wrong answer and it lands. Blows with no
+   telegraph (goblins, daggers) pass nothing and behave as they always did. */
+function damagePlayer(amount, srcX, kind, contactY, answer) {
   const p = PL;
-  if (p.dead || p.iTime > 0) {
+  if (p.dead) return 'dodge';
+  /* only the roll's OWN i-frames are refused — invulnerability earned any
+     other way (a hit, a parry, a pit respawn) always holds */
+  const wrongRoll = p.rollIF && answer && answer !== 'ROLL';
+  if (p.iTime > 0 && !wrongRoll) {
     if (p.state === 'roll') FX.afterimage(p.x, p.y, p.face);
     return 'dodge';
   }
@@ -3705,7 +3726,8 @@ function damagePlayer(amount, srcX, kind, contactY) {
   const cy2 = contactY === undefined ? p.y - 26 : contactY;
   const cxp = p.x + p.face * 11;
   if ((p.state === 'block' || p.state === 'parry') && fromFront) {
-    if (p.parryT > 0) {
+    /* the shield still stops it, but only the named blow can be turned */
+    if (p.parryT > 0 && (!answer || answer === 'PARRY')) {
       /* ---- PARRY ---- */
       plSet('parry', 'parry');
       p.parryT = 0; p.iTime = 0.30;
@@ -4185,7 +4207,8 @@ function bossUpdate(dt) {
         const hb = PL.hurtBox();
         if (!(hb.x1 < bx0 || hb.x0 > bx1 || hb.y1 < by0 || hb.y0 > by1)) {
           b.hitDone = true;
-          const res = damagePlayer(K.dmg, b.x, 'boss', clamp(PL.y - 22, by0, by1));
+          const tell = BTELL[b.state];
+          const res = damagePlayer(K.dmg, b.x, 'boss', clamp(PL.y - 22, by0, by1), tell ? tell.act : null);
           if (res === 'parry') { bossStun(); }
           else if (res === 'hit') { PL.vx = (PL.x - b.x > 0 ? 1 : -1) * K.kb; PL.vy = -110; }
         }
@@ -4288,38 +4311,93 @@ function shakeDebrisFromWalls(n) {
 /* ---------------------------------------------------------------------
    19.  THE GATE
    --------------------------------------------------------------------- */
-const GATE = { y: -120, target: GY - 92, closing: false, closed: false, t: 0, y0: -120 };
+/* The portcullis has two jobs. It bars the road to the arena until the last
+   goblin is down, then hauls itself up; and once the knight is through, it
+   drops behind him and there is no way back out.
+     shut -> raising -> open -> falling -> closed                          */
+const GATE = {
+  y: GY - 92, shutY: GY - 92, upY: -120,
+  state: 'shut', t: 0
+};
+const GATE_H = 92;
+function hostStanding() {
+  let n = 0;
+  for (const e of EN) if (!e.dead) n++;
+  return n;
+}
+/* solid while it hangs low enough for the knight to walk into */
+function gateBarred() {
+  if (GATE.state === 'shut') return true;
+  if (GATE.state === 'raising') return GATE.y + GATE_H > GY - PLC.h + 6;
+  return false;
+}
 function startBossFight() {
   if (GAME.arenaLocked) return;
   GAME.arenaLocked = true;
   CAM.lock = 1; CAM.lockX0 = LV.arenaX0 - 66; CAM.lockX1 = LV.arenaX1;
-  GATE.closing = true; GATE.t = 0;
+  GATE.state = 'falling'; GATE.t = 0; GATE.y = GATE.upY;
   BOSS.active = true; bSet('intro', 'roar'); BOSS.introT = 0;
   AUD.startMusic('boss');
   GAME.bossNameT = 3.2;
 }
 function gateUpdate(dt) {
-  if (!GATE.closing || GATE.closed) return;
-  GATE.t += dt;
-  const t = mn(1, GATE.t / 0.42);
-  GATE.y = GATE.y0 + (GATE.target - GATE.y0) * eIn(t);
-  if (t >= 1) {
-    GATE.closed = true; GATE.closing = false;
-    AUD.gate(); CAM.kick(4.4, 6);
-    FX.dust(LV.gateX + 6, GY, 8, 40, 20, P.stnLt);
-    FX.dust(LV.gateX + 50, GY, 8, 40, 20, P.stnLt);
-    for (let i = 0; i < 6; i++) PS.spawn({
-      x: LV.gateX + rnd(0, 56), y: GY - rnd(0, 6), vx: rnd(-90, 90), vy: rnd(-90, -20),
-      life: rnd(0.15, 0.3), size: 1, col: P.stlHi, alpha: 0.9, grav: 240, shape: 2, len: 4,
-      layer: L_COMBAT, add: true
-    });
-    for (let i = 0; i < 12; i++) PS.spawn({
-      x: LV.gateX + rnd(-4, 60), y: GY - rnd(0, 90), vx: rnd(-40, 40), vy: rnd(-30, 40),
-      life: rnd(0.5, 1.1), size: rint(1, 2), col: P.stn, col2: P.stnS,
-      grav: 300, shape: 3, layer: L_WORLD, ground: GY
-    });
-    for (let i = 0; i < 5; i++) spawnFogWisp(LV.gateX + rnd(-20, 80), GY - rnd(2, 10), true);
+  const G = GATE;
+  if (G.state === 'shut') {
+    /* the road opens the moment the field is clear */
+    if (EN.length && hostStanding() === 0) {
+      G.state = 'raising'; G.t = 0;
+      AUD.gate(); AUD.uiBig();
+      CAM.kick(2.8, 7);
+      GAME.gateOpenT = 2.8;
+      FX.dust(LV.gateX + 8, GY, 6, 30, 16, P.stnLt);
+      FX.dust(LV.gateX + 48, GY, 6, 30, 16, P.stnLt);
+    }
+    return;
   }
+  if (G.state === 'raising') {
+    G.t += dt;
+    const t = mn(1, G.t / 1.15);
+    G.y = G.shutY + (G.upY - G.shutY) * eOut(t);
+    /* grit shaken loose from the housing as the chains take the weight */
+    if (Math.random() < 0.4) PS.spawn({
+      x: LV.gateX + rnd(0, 56), y: GY - rnd(96, 118), vx: rnd(-8, 8), vy: rnd(20, 50),
+      life: rnd(0.5, 1.0), size: 1, col: P.stnM, col2: P.stnS,
+      grav: 240, shape: 3, layer: L_WORLD, ground: GY
+    });
+    if (t >= 1) G.state = 'open';
+    return;
+  }
+  if (G.state === 'falling') {
+    G.t += dt;
+    const t = mn(1, G.t / 0.42);
+    G.y = G.upY + (G.shutY - G.upY) * eIn(t);
+    if (t >= 1) { G.state = 'closed'; gateSlam(); }
+  }
+}
+/* iron meeting stone: the whole field feels it */
+function gateSlam() {
+  AUD.gate(); AUD.land(1);
+  CAM.kick(8.5, 3.6);
+  GAME.hitstop = mx(GAME.hitstop, 0.06);
+  FX.dust(LV.gateX + 6, GY, 12, 52, 26, P.stnLt);
+  FX.dust(LV.gateX + 50, GY, 12, 52, 26, P.stnLt);
+  FX.dustColumn(LV.gateX + 28, GY, 120);
+  FX.dustRing(LV.gateX + 28, GY, 14, 150);
+  FX.stoneBurst(LV.gateX + 8, GY, 6, 130, 5);
+  FX.stoneBurst(LV.gateX + 48, GY, 6, 130, 5);
+  for (let i = 0; i < 10; i++) PS.spawn({
+    x: LV.gateX + rnd(0, 56), y: GY - rnd(0, 6), vx: rnd(-120, 120), vy: rnd(-110, -25),
+    life: rnd(0.15, 0.32), size: 1, col: P.stlHi, alpha: 0.9, grav: 240, shape: 2, len: 5,
+    layer: L_COMBAT, add: true
+  });
+  for (let i = 0; i < 16; i++) PS.spawn({
+    x: LV.gateX + rnd(-4, 60), y: GY - rnd(0, 90), vx: rnd(-50, 50), vy: rnd(-40, 50),
+    life: rnd(0.5, 1.2), size: rint(1, 2), col: P.stn, col2: P.stnS,
+    grav: 300, shape: 3, layer: L_WORLD, ground: GY
+  });
+  /* the arena walls shed what the impact knocks loose */
+  shakeDebrisFromWalls(12);
+  for (let i = 0; i < 6; i++) spawnFogWisp(LV.gateX + rnd(-20, 80), GY - rnd(2, 10), true);
 }
 
 /* ---------------------------------------------------------------------
@@ -4378,7 +4456,7 @@ function textC(g, s, cx, y, col, sc, sp, sh) {
 const GAME = {
   mode: 'boot', t: 0, hitstop: 0, damageFlash: 0, parryFlash: 0,
   arenaLocked: false, kills: 0, reflectKills: 0, starFx: [],
-  deathT: 0, winT: 0, bossNameT: 0, phaseText: 0, prompt: 0,
+  deathT: 0, winT: 0, bossNameT: 0, phaseText: 0, prompt: 0, gateOpenT: 0,
   warm: [], warmI: 0, ready: false, fps: 60, slow: 1,
   blocked: false            /* handheld held upright — the world is frozen */
 };
@@ -4413,7 +4491,7 @@ function resetRun() {
   GAME.damageFlash = 0; GAME.parryFlash = 0; GAME.hitstop = 0;
   GAME.deathT = 0; GAME.winT = 0; GAME.bossNameT = 0; GAME.phaseText = 0;
   GAME.starFx.length = 0; GAME.hpGhost = PLC.maxHp; GAME.t = 0;
-  GATE.y = GATE.y0; GATE.closing = false; GATE.closed = false; GATE.t = 0;
+  GATE.y = GATE.shutY; GATE.state = 'shut'; GATE.t = 0; GAME.gateOpenT = 0;
   CAM.lock = 0; CAM.x = 0; CAM.tx = 0; CAM.shake = 0;
   for (const s of LV.spawns) spawnEnemy(s.t, s.x, s.y);
   CAM.follow(PL.x, PL.y, 1, 1, 0);
@@ -4664,11 +4742,36 @@ function drawHUD() {
     textC(ctx, 'THE CROWN BURNS', VW / 2, 108, '#c05a3a', 1, 2, true);
     ctx.globalAlpha = 1;
   }
+  /* the barred gate has to say why it will not lift, or walking into it
+     reads as a bug rather than a condition */
+  if (!PL.dead && gateBarred() && ab(PL.x - LV.gateX) < 160) {
+    const n = hostStanding();
+    const s1 = 'THE GATE IS BARRED';
+    const s2 = n === 1 ? 'ONE OF THE HOST STILL STANDS' : n + ' OF THE HOST STILL STAND';
+    const w = mx(textW(s1, 1, 2), textW(s2, 1, 2));
+    const a = clamp((160 - ab(PL.x - LV.gateX)) / 40, 0, 1);
+    /* kept clear of the first-run control line that sits at y 84 */
+    ctx.globalAlpha = a * 0.78;
+    r(ctx, fl(VW / 2 - w / 2) - 6, 54, w + 12, 25, '#05070a');
+    r(ctx, fl(VW / 2 - w / 2) - 6, 54, w + 12, 1, '#4a3d1c');
+    r(ctx, fl(VW / 2 - w / 2) - 6, 78, w + 12, 1, '#4a3d1c');
+    ctx.globalAlpha = a;
+    textC(ctx, s1, VW / 2, 58, '#b8963f', 1, 2, true);
+    textC(ctx, s2, VW / 2, 69, '#7d8898', 1, 2, true);
+    ctx.globalAlpha = 1;
+  }
+  if (GAME.gateOpenT > 0) {
+    const a = clamp(GAME.gateOpenT / 0.5, 0, 1) * clamp((2.8 - GAME.gateOpenT) / 0.3, 0, 1);
+    ctx.globalAlpha = a;
+    textC(ctx, 'THE GATE LIFTS', VW / 2, 96, P.gldHi, 2, 2, true);
+    textC(ctx, 'THE KING WAITS BEYOND', VW / 2, 112, '#8a7f68', 1, 2, true);
+    ctx.globalAlpha = 1;
+  }
   /* first-run control reminder, on its own dark plate */
   if (GAME.t < 9 && !GAME.arenaLocked && !PL.dead) {
     const a = clamp(mn(GAME.t, 9 - GAME.t) / 1.2, 0, 1);
     const s = TOUCH
-      ? 'TAP GUARD THE MOMENT A BLOW LANDS TO PARRY IT'
+      ? 'TAP THE SHIELD THE MOMENT A BLOW LANDS TO PARRY'
       : 'LMB LIGHT   RMB HEAVY   Q GUARD (TAP TO PARRY)   S ROLL   E FLASK';
     const w = textW(s, 1, 1);
     ctx.globalAlpha = a * 0.72;
@@ -4792,7 +4895,7 @@ function drawTitle() {
     if ((WT % 1.2) < 0.75) textC(ctx, 'TAP TO BEGIN', VW / 2, 196, P.gldHi, 2, 2, true);
     ra(ctx, 0, 234, VW, 28, '#05070a', 0.72);
     r(ctx, 0, 234, VW, 1, '#1b2029');
-    textC(ctx, 'TAP GUARD AS THE BLOW LANDS TO PARRY', VW / 2, 240, '#79838f', 1, 1, true);
+    textC(ctx, 'TAP THE SHIELD AS THE BLOW LANDS TO PARRY', VW / 2, 240, '#79838f', 1, 1, true);
     textC(ctx, 'II  PAUSE          MUTE  SOUND', VW / 2, 252, '#4f5866', 1, 1, true);
   } else {
     if ((WT % 1.2) < 0.75) textC(ctx, 'PRESS ENTER', VW / 2, 198, P.gldHi, 2, 2, true);
@@ -4885,6 +4988,7 @@ function updatePlay(dt) {
   if (GAME.parryFlash > 0) GAME.parryFlash -= dt;
   if (GAME.bossNameT > 0) GAME.bossNameT -= dt;
   if (GAME.phaseText > 0) GAME.phaseText -= dt;
+  if (GAME.gateOpenT > 0) GAME.gateOpenT -= dt;
   for (let i = GAME.starFx.length - 1; i >= 0; i--) { GAME.starFx[i].t -= dt; if (GAME.starFx[i].t <= 0) GAME.starFx.splice(i, 1); }
   GAME.hpGhost += (PL.hp - GAME.hpGhost) * mn(1, dt * 2.2);
 
@@ -5059,7 +5163,9 @@ function tcUp(id) {
 }
 function tcMuteLabel() {
   const m = document.getElementById('tb-mute');
-  if (m) m.classList.toggle('muted', !!AUD.muted);
+  if (!m) return;
+  m.classList.toggle('muted', !!AUD.muted);
+  if (ICON.sound) m.style.backgroundImage = 'url(' + (AUD.muted ? ICON.muted : ICON.sound) + ')';
 }
 /* QUIT only exists while the run is paused — the same reach the keyboard has,
    where R is read in 'paused' and nowhere during play. A pad that could throw
@@ -5072,6 +5178,134 @@ function tcSyncQuit() {
   const q = document.getElementById('tb-quit');
   if (q) q.hidden = !want;
 }
+/* ---- pad icons ------------------------------------------------------
+   Drawn with the same primitives and palette as the sprites, so the
+   controls speak the game's language instead of sitting on top of it in
+   a UI font. 16x16 sources, baked once at boot into data URIs and shown
+   at an integer multiple so they never land between pixels.
+   Each glyph carries the colour of the thing it does: the flask is full
+   of crimson, the shield is steel with a gold boss, the heavy blow
+   throws gold sparks.                                                  */
+const ICON_SRC = 16;
+const ICON = {};
+function icon(key, fn) {
+  const cv = mkcv(ICON_SRC, ICON_SRC);
+  fn(gc(cv));
+  finish(cv, { rim: 1.10, rimAdd: 4, bot: 0.78 });   /* same moon rim the sprites get */
+  ICON[key] = cv.toDataURL();
+}
+function buildPadIcons() {
+  /* the health flask — crimson draught under a gold cap */
+  icon('flask', function (g) {
+    ell(g, 8, 10.4, 5.4, 4.6, '#2a1418');            /* glass */
+    ell(g, 8, 10.8, 4.4, 4.0, P.cl);                 /* the draught */
+    r(g, 4, 12, 9, 3, P.clS);
+    ell(g, 7, 10.2, 2.4, 1.9, P.clHi);
+    r(g, 6, 3, 4, 4, '#33202a');                     /* neck */
+    r(g, 6, 3, 1, 4, '#4a2f38');
+    r(g, 5, 0, 6, 3, P.gld);                         /* cap */
+    r(g, 5, 0, 6, 1, P.gldHi);
+    r(g, 5, 2, 6, 1, P.gldD);
+    px(g, 5, 9, '#e8a09a'); px(g, 5, 10, '#c9807c'); /* glint */
+  });
+  /* the heater shield */
+  icon('guard', function (g) {
+    for (let y = 0; y < 15; y++) {
+      const t = y / 14;
+      const hw = t < 0.42 ? 6.2 : 6.2 * (1 - Math.pow((t - 0.42) / 0.58, 1.6));
+      if (hw < 0.5) continue;
+      for (let x = -7; x <= 7; x++) {
+        if (ab(x) > hw) continue;
+        /* rounded across, not split down the middle */
+        let col = P.stl;
+        if (x < -hw * 0.62) col = P.stlHi;
+        else if (x > hw * 0.68) col = P.stlD;
+        else if (x < -hw * 0.15) col = P.stlLt;
+        if (y === 0) col = P.stlHi;
+        if (y > 11) col = mixc(col, P.stlS, 0.45);      /* the point falls into shadow */
+        px(g, 8 + x, y, col);
+      }
+    }
+    /* the boss, a centred gold diamond */
+    px(g, 8, 4, P.gldHi);
+    r(g, 7, 5, 3, 1, P.gld); px(g, 7, 5, P.gldHi);
+    r(g, 6, 6, 5, 1, P.gld); px(g, 6, 6, P.gldHi);
+    r(g, 7, 7, 3, 1, P.gldD);
+    px(g, 8, 8, P.gldS);
+    px(g, 3, 2, P.gldD); px(g, 13, 2, P.gldD);          /* rivets */
+  });
+  /* light attack — the arming sword alone */
+  icon('light', function (g) {
+    seg(g, 4.5, 11.5, 13, 3, 2.6, { hi: P.stlHi, base: P.stlLt, sh: P.stlM, taper: 0.4 });
+    seg(g, 2.5, 9.5, 6.5, 13.5, 2, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
+    seg(g, 4, 12.5, 1.5, 15, 2.2, M_LEA);
+    px(g, 13, 3, P.stlHi);
+  });
+  /* heavy attack — a broader blade, and the blow already landing */
+  icon('heavy', function (g) {
+    seg(g, 4.5, 11.5, 12.5, 3.5, 4.2, { hi: P.stlHi, base: P.stl, sh: P.stlD, taper: 0.26 });
+    seg(g, 2, 9.5, 7, 14, 2.8, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
+    seg(g, 4, 12.5, 1, 15.5, 2.6, M_LEA);
+    px(g, 14, 1, P.gldHi); px(g, 12, 0, P.gld);
+    px(g, 15, 3, P.gld); px(g, 15, 0, P.gldHi);
+  });
+  /* roll — a turn, with the arrow chasing it round */
+  icon('roll', function (g) {
+    /* the turn, opened at the top right so the arrow has somewhere to go */
+    for (let a = 0; a < TAU; a += 0.035) {
+      const d = a * 180 / PI;
+      if (d > 262 && d < 332) continue;
+      px(g, 8 + cos(a) * 5.2, 8 + sin(a) * 5.2, '#b4cfe2');
+      px(g, 8 + cos(a) * 4.0, 8 + sin(a) * 4.0, '#7d9db8');
+    }
+    /* arrowhead carrying on clockwise */
+    r(g, 9, 0, 1, 7, '#cfe4f2');
+    r(g, 10, 1, 1, 5, '#b4cfe2');
+    r(g, 11, 2, 1, 3, '#b4cfe2');
+    px(g, 12, 3, '#8fb0c8');
+  });
+  /* jump — up, off the stone */
+  icon('jump', function (g) {
+    for (let i = 0; i < 5; i++) r(g, 7 - i, 2 + i, 2 + i * 2, 1, i < 2 ? '#c8e8ba' : '#a8d49c');
+    r(g, 7, 7, 2, 5, '#a8d49c');
+    r(g, 7, 7, 1, 5, '#c8e8ba');
+    r(g, 3, 13, 10, 2, '#4a6b46');
+    r(g, 3, 13, 10, 1, '#6d9463');
+  });
+  /* the two directions */
+  icon('right', function (g) {
+    for (let x = 0; x < 8; x++) { const h = 7 - x; r(g, 5 + x, 8 - h, 1, h * 2 + 1, '#9aa5b3'); }
+    for (let x = 0; x < 7; x++) px(g, 5 + x, 8 - (7 - x), '#c2cdd9');
+  });
+  icon('left', function (g) {
+    for (let x = 0; x < 8; x++) { const h = 7 - x; r(g, 10 - x, 8 - h, 1, h * 2 + 1, '#9aa5b3'); }
+    for (let x = 0; x < 7; x++) px(g, 10 - x, 8 - (7 - x), '#c2cdd9');
+  });
+  /* system row */
+  icon('pause', function (g) {
+    r(g, 4, 3, 3, 10, '#9aa5b3'); r(g, 4, 3, 3, 1, '#c2cdd9');
+    r(g, 9, 3, 3, 10, '#9aa5b3'); r(g, 9, 3, 3, 1, '#c2cdd9');
+  });
+  const speaker = function (g) {
+    r(g, 2, 6, 3, 4, '#9aa5b3');
+    for (let i = 0; i < 4; i++) { const h = 4 + i * 2; r(g, 5 + i, 8 - h / 2, 1, h, i < 2 ? '#aab5c3' : '#9aa5b3'); }
+    r(g, 2, 6, 3, 1, '#c2cdd9');
+  };
+  icon('sound', function (g) {
+    speaker(g);
+    r(g, 10, 6, 1, 4, '#8fb0c8'); r(g, 12, 4, 1, 8, '#6f90ab'); r(g, 14, 2, 1, 12, '#54748c');
+  });
+  icon('muted', function (g) {
+    speaker(g);
+    for (let i = 0; i < 6; i++) { px(g, 10 + i, 4 + i, '#c07b76'); px(g, 10 + i, 5 + i, '#8e5a56'); }
+  });
+}
+buildPadIcons();
+const ICON_FOR = {
+  left: 'left', right: 'right', jump: 'jump', roll: 'roll', light: 'light',
+  heavy: 'heavy', guard: 'guard', flask: 'flask', pause: 'pause', mute: 'sound'
+};
+
 if (TOUCH && TCPAD) {
   TCPAD.hidden = false;
   const hintEl = document.getElementById('hint');
@@ -5079,6 +5313,8 @@ if (TOUCH && TCPAD) {
   const pads = TCPAD.querySelectorAll('.tb');
   for (let i = 0; i < pads.length; i++) {
     const el = pads[i], act = el.getAttribute('data-act');
+    const ic = ICON_FOR[act];
+    if (ic) el.style.backgroundImage = 'url(' + ICON[ic] + ')';
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault(); e.stopPropagation();
       AUD.unlock();
@@ -5151,6 +5387,9 @@ function sizeTouchPads() {
   const u = clamp(Math.round(mn(DEV.vw, DEV.vh) * 0.17), 42, 84);
   TCPAD.style.setProperty('--u', u + 'px');
   TCPAD.style.setProperty('--gap', clamp(Math.round(u * 0.18), 6, 16) + 'px');
+  /* the glyph fills about half the pad, rounded to a whole multiple of its
+     16px source — a pixel icon at 1.7x has fatter columns than thin ones */
+  TCPAD.style.setProperty('--icon', ICON_SRC * clamp(Math.round(u * 0.52 / ICON_SRC), 1, 4) + 'px');
   DEV.unit = u;
 }
 

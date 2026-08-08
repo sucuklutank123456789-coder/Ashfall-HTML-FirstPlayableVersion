@@ -54,7 +54,7 @@ Kod, kaynak içinde numaralandırılmış banner yorumlarıyla ayrılmıştır. 
 | 16 | GOBLINS (mantık) | 3686 | `ETUNE`, `EN`, `enemyUpdate` AI, `enemyHurt` |
 | 17 | THROWN DAGGERS | 3873 | `DAG` — parry ile sahibine geri döner |
 | 18 | GRULLK — boss logic | 3935 | `BATK`, `BOSS`, `bossUpdate`, `bossImpact`, stagger/stun/faz |
-| 19 | THE GATE | 4220 | Arena kilidi ve düşen demir kapı |
+| 19 | THE GATE | ~4294 | `GATE` durum makinesi: ilerleme bariyeri + arena kilidi, `gateBarred`, `gateSlam` |
 | 20 | PIXEL TYPE | 4257 | `FONT` 5×7 bitmap, `text/textC/textSh` |
 | 21 | GAME STATE | 4307 | `GAME`, sprite ısıtma kuyruğu (`warm`), `resetRun` |
 | 22 | ENTITY RENDERING | 4354 | `drawPlayer/drawEnemies/drawBoss/drawBossTell/drawDaggers/drawGate` |
@@ -231,9 +231,12 @@ Hasar: **light 13**, **heavy 30**. İsabetli vuruş stamina geri verir (light +3
   - Goblin saldırısını parry → goblin sendeler ve 6 hasar alır.
   - **Fırlatılan hançeri parry → hançer düşmana geri döner** (`friendly`, 1.5× hız,
     goblinlere 36, boss'a 30 hasar). `GAME.reflectKills` sayacı bunu ödüllendirir.
-  - **Boss saldırısını parry → Grullk anında STUN olur.** Oyunun en büyük ödülü budur.
-- **Hasar akışı** tek kapıdan geçer: `damagePlayer(amount, srcX, kind, contactY)` →
+  - **`diag` (PARRY yazan) boss saldırısını parry → Grullk anında STUN olur.** Oyunun en
+    büyük ödülü budur. Diğer iki boss saldırısında parry penceresi açılmaz (bkz. 6.5).
+- **Hasar akışı** tek kapıdan geçer: `damagePlayer(amount, srcX, kind, contactY, answer)` →
   `'dodge' | 'parry' | 'block' | 'break' | 'hit'` döner. Sadece **önden** gelen darbeler bloklanabilir.
+  `answer`, telegraph'ın söylediği kelimedir (`'ROLL' | 'JUMP' | 'PARRY'`); yalnızca boss
+  gönderir, goblin ve hançer `undefined` bırakır ve eski davranışı korur.
 - **Hitstop** vurgu aracıdır: light 0.055 s, heavy 0.11 s, parry 0.16 s, oyuncu hasarı 0.07 s,
   boss ölümü 0.35 s. Hitstop sırasında `WT` (dünya saati) çalışmaya devam eder — ambiyans donmaz.
 
@@ -265,13 +268,47 @@ faz 2 tetikleyici: hp ≤ %50 → roar + "THE CROWN BURNS"
 | `sweep` (alçak yatay savurma) | 1.30 s | 24 / 240 | **JUMP** (yeşil) | üzerinden atla |
 | `diag` (sıçramalı çapraz) | 1.25 s | 26 / 210 | **PARRY** (altın) | savuştur |
 
+**Telegraph bağlayıcıdır — yazan cevap tek bedava cevaptır.** Yuvarlanmanın i-frame'i
+yalnızca **ROLL** yazan darbeyi geçer; PARRY veya JUMP yazan bir darbenin altından
+yuvarlanmak yanlış cevaptır ve tam hasar alınır (`damagePlayer` içindeki `wrongRoll`).
+Aynı şekilde parry penceresi yalnızca **PARRY** yazan darbede açılır; diğerlerinde kalkan
+düşmez, darbe **bloka** düşer. Bu **sadece yuvarlanmanın kendi i-frame'ini** iptal eder —
+vuruş, parry veya çukur dönüşüyle kazanılan dokunulmazlık her zaman geçerlidir
+(`PL.rollIF` bayrağı bunu ayırt eder).
+
+Doğrulanmış davranış (hasar / boss stun):
+
+| | roll | jump | parry | block | hiçbiri |
+|---|---|---|---|---|---|
+| `smash` (ROLL) | **0** | 30 | 4 | 4 | 30 |
+| `sweep` (JUMP) | 24 | **0** | 3 | 3 | 24 |
+| `diag` (PARRY) | 26 | 26 | **0 + STUN** | 3 | 26 |
+
+Blok her zaman çalışır ama bedellidir (stamina + %12 sızma); telegraph'a uymak bedavadır.
+`jump` ve `roll`'un "0"ları farklı yollardan gelir: `jump` **konumsaldır** (vuruş kutusu
+alçak kalır, oyuncu havadadır), `roll` ise i-frame'dir.
+
 `drawBossTell()` başın üstüne bir plaka çizer: aksiyon adı + **darbe anına dolan zamanlama çubuğu**;
 son 0.30 s'de yanıp söner. Mesafeye göre saldırı seçimi (`<50` yakın, `<96` orta, `<190` uzak);
 faz 2'de %34 ihtimalle **zincir saldırı** yapar ve cooldown kısalır (0.42–0.9 s vs 0.8–1.35 s).
 
-Boss dövüşü tetikleyicisi: `PL.x > LV.arenaX0 + 44` → `startBossFight()` →
-kamera kilitlenir (`CAM.lock`), **demir kapı düşer** (`GATE`), boss müziği başlar,
-"THE LAST WARLORD / GRULLK" başlığı belirir. Oyuncu artık arenaya hapsolmuştur.
+### 6.5b Kapı: ilerleme kapısı ve arena kilidi (`GATE`, bölüm 19)
+Tek bir demir kapı iki iş yapar. Durum makinesi:
+`shut` → `raising` → `open` → `falling` → `closed`.
+
+- **`shut` (başlangıç):** kapı yerdedir ve yolu **fiziksel olarak kapatır** —
+  `gateBarred()` doğruyken `plUpdate` oyuncuyu `LV.gateX - 9`'da durdurur. Boss'a
+  erken gidilemez.
+- **Açılma koşulu:** `hostStanding() === 0`, yani `EN` içindeki **her goblin `dead`**.
+  Kasıtlı olarak `GAME.kills` değil `e.dead` sayılır: çukura düşen goblin `dead` olur
+  ama `kills`'i artırmaz, `kills` kullanılsaydı oyun kilitlenirdi.
+- **Geri bildirim zorunludur:** kapıya 160 px yaklaşınca HUD "THE GATE IS BARRED /
+  N OF THE HOST STILL STAND" yazar; açılınca "THE GATE LIFTS" belirir. Bunlar olmadan
+  geçilemeyen kapı hata gibi okunur.
+- **`falling`:** `startBossFight()` (`PL.x > LV.arenaX0 + 44`) kapıyı arkadan indirir.
+  Kapanınca `gateSlam()`: `CAM.kick(8.5, 3.6)`, kısa hitstop, toz sütunu/halkası, taş
+  patlaması, kıvılcım ve `shakeDebrisFromWalls(12)` — **yer sarsılır**.
+  Aynı anda kamera kilitlenir, boss müziği başlar, "THE LAST WARLORD / GRULLK" belirir.
 
 ### 6.6 Seviye
 Tek, kesintisiz bir seviye: **3640 px genişlik**, zemin `GY = 200`.
@@ -306,6 +343,19 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   küçük telefonda başparmağı yutar, tablette pul gibi kalır. CSS'teki değerler yalnızca
   ilk `resize()` gelene kadar geçerli yedeklerdir.
   Buton boyutu önemi yansıtır: `heavy` 1.2×, `light` 1.05×, `flask` 0.88×.
+- **Butonlarda yazı değil, pişmiş piksel ikon var** (`buildPadIcons`, bölüm 26b).
+  Her ikon **16×16** kaynak olarak oyunun kendi primitifleriyle (`r`, `px`, `ell`, `seg`,
+  `dome`, `mixc`) ve `P` paletiyle çizilir, sprite'larla aynı `finish()` ay rim'ini alır
+  (`rim 1.10`), sonra `toDataURL()` ile `background-image`'a girer. Dış dosya yok.
+  **İkon rengi ne yaptığını söyler:** flask kızıl iksir + altın kapak, guard çelik kalkan +
+  altın göbek, light ince kılıç, heavy geniş kılıç + altın kıvılcım, roll mavi dönme oku,
+  jump yeşil ok + zemin çizgisi.
+  Boyut `--icon` ile verilir ve **16'nın tam katıdır** (`u*0.52` en yakın kata yuvarlanır,
+  1–4× arası): 1.7× bir piksel ikon şişman ve ince sütunlar üretir.
+  `tcMuteLabel()` sesi açıp kapadıkça `sound` ↔ `muted` ikonunu değiştirir.
+- **Yön tuşları ayrı aralıklanır:** hareket satırı `gap`'i normalin **2.6×**'ı ve
+  `padding-left: u*0.22` ile biraz sağa alınmıştır. Başparmak birinden diğerine kayarken
+  boşluğu hissetmeli, ikisine birden basmamalı.
 - `env(safe-area-inset-*)` çentik/ev düğmesi alanına saygı duyar — bu **yalnızca** viewport
   meta etiketindeki `viewport-fit=cover` sayesinde çalışır; o kaldırılırsa insetler sessizce
   sıfırlanır.
@@ -314,6 +364,8 @@ Zafer ekranı istatistik gösterir: öldürülen goblin, **çevrilen hançer**, 
   `TOUCH` durumuna göre dallanır: dokunmatikte "TAP TO BEGIN" / "TAP TO RISE AGAIN" /
   "TAP II TO CONTINUE" ve klavye tuş listesi yerine tek satırlık parry ipucu gösterilir.
   **Yeni bir istem metni eklerken bu dallanmayı koru** — mobilde "PRESS ENTER" yazmak yalandır.
+  Butonlar artık yazı taşımadığı için metinler onlara **adla değil şeyle** atıfta bulunur
+  ("TAP THE SHIELD", "TAP II"), aksi hâlde ekranda olmayan bir kelimeyi işaret ederler.
 - **`QUIT` pad'i (`restart`) bağlamsaldır.** `tcSyncQuit()` onu yalnızca `GAME.mode === 'paused'`
   iken gösterir ve `.hidden` yazmasını yalnızca durum *değiştiğinde* yapar (kare başına DOM
   yazımı yok). Gerekçe klavyeyle birebir aynı: `R` de sadece `paused` içinde okunur, oyun
@@ -439,7 +491,8 @@ Değiştirmeden önce bilinmesi gerekenler:
    komşu varlıklarla tutarlı tut (şövalye `rim 1.23`, goblin `1.22`, boss `1.17`).
 3. Yeni animasyon mu? İlgili tabloya (`KA`/`GA`/`BA`) ekle; `buildWarmQueue` gerisini halleder.
 4. Yeni aksiyon mu? `KEYMAP`'e **ve** `#tc` içindeki bir butonun `data-act`'ine ekle,
-   yoksa mobilde erişilemez olur.
+   yoksa mobilde erişilemez olur. Buton bir **ikon** ister: `buildPadIcons` içine 16×16
+   çiz ve `ICON_FOR`'a bağla — yazı koyma, pad'lerin dili ikondur.
 5. Yeni boss saldırısı mı? `BA` (poz) + `BATK` (kutu/hasar) + `BTELL` (telegraph) —
    **üçü birden** olmadan saldırı okunamaz hâle gelir; okunabilirlik bu oyunun sözleşmesidir.
 6. Dengeleme değeri mi? `PLC` / `ETUNE` / `BATK` / `BOSS` içindeki tek noktadan değiştir;
