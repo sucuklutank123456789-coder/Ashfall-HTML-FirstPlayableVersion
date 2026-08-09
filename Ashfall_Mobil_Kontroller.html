@@ -1042,6 +1042,7 @@ const FX = {
    two-bone IK, then baked into the sprite cache.
    --------------------------------------------------------------------- */
 const KW = 88, KH = 80, KOX = 44, KOY = 66;    /* sprite canvas + feet origin */
+const KHIP = 2, KLEG = 19.3;                   /* hip half-width, usable leg reach (of 10+10) */
 
 function ik(ax, ay, bx, by, l1, l2, bend) {
   let dx = bx - ax, dy = by - ay;
@@ -1060,6 +1061,54 @@ function seg(g, x0, y0, x1, y1, w, c) {
   plate(g, (x0 + x1) * 0.5, (y0 + y1) * 0.5, len + w * 0.45, w, ang, c);
 }
 
+/* --- gait ------------------------------------------------------------
+   Every walk in the game goes through these three helpers rather than a raw
+   sine on the foot, because a sine is exactly what makes a stride read as
+   skating: it eases the foot to a halt at both ends of the stroke while the
+   body keeps its pace, so the sole slides along the stone. Here the planted
+   foot travels straight back at a constant rate and only the swing curves. */
+
+/* One foot's path, in pixels around its own hip pivot. `u` is that leg's
+   phase in [0,1): the foot strikes at +A, stays planted and slides back to
+   -A across the stance fraction `st`, then swings forward through an arc `H`
+   tall. The swing reaches a hair past the strike point and retracts into
+   contact the way a real leg does, which kills the last of the slide.
+   `a` is ankle pitch — heel leads in, toe drives down through push-off —
+   and `toe` (the boot's length ahead of the ankle) raises the ankle over the
+   planted toe so the heel lifts instead of the toe sinking into the ground.
+   `pk` scales the pitch back for heavy, flat-footed walkers. */
+function gaitFoot(u, A, H, st, toe, pk) {
+  u -= fl(u);
+  const k = pk === undefined ? 1 : pk;
+  if (u < st) {
+    const q = u / st;
+    const a = (q < 0.18 ? -0.28 * (1 - q / 0.18) : (q > 0.62 ? 0.50 * (q - 0.62) / 0.38 : 0)) * k;
+    return { x: A * (1 - 2 * q), y: a > 0 ? -toe * sin(a) : 0, a: a };
+  }
+  const s = (u - st) / (1 - st);
+  const e = s * s * s * (s * (s * 6 - 15) + 10) + 0.34 * s * (1 - s);
+  const c = s < 0.42 ? s * 0.5 / 0.42 : 0.5 + (s - 0.42) * 0.5 / 0.58;
+  return { x: -A + 2 * A * e, y: -H * sin(PI * c), a: (0.50 - 0.78 * s * s * (3 - 2 * s)) * k };
+}
+
+/* The hip has to ride low enough that the legs can actually reach the feet.
+   Without it `ik` clamps at full extension near the ends of the stride, the
+   sole floats off the stone and the walk limps — the hip pivots sit a couple
+   of pixels either side of centre, so the two legs hit that limit at
+   different points and the limp is uneven. Handing it the live foot targets
+   also buys the two dips per stride of a real gait for free. `R` sits just
+   under the leg's full length so the knee never locks straight. */
+function hipRide(R, fx, fy, bx, by) {
+  return mx(fy - Math.sqrt(mx(1, R * R - fx * fx)), by - Math.sqrt(mx(1, R * R - bx * bx)));
+}
+
+/* A boot as a short plate hinged at the ankle. The pitch is a pixel or two,
+   but it is what reads as weight on the step. */
+function foot(g, ax, ay, back, fwd, w, a, mat) {
+  const c = cos(a), s = sin(a);
+  seg(g, ax - back * c, ay - back * s, ax + fwd * c, ay + fwd * s, w, mat);
+}
+
 /* material sets */
 const M_NEAR = { hi: P.stlHi, base: P.stl, sh: P.stlD, edge: P.stlS };
 const M_FAR = { hi: P.stlLt, base: P.stlM, sh: P.stlS, edge: P.stlX };
@@ -1073,7 +1122,7 @@ function KPOSE() {
     hipX: 0, hipY: -20, lean: 0.07, headX: 1, headY: 0, headA: 0,
     swX: 7, swY: -26, swA: 0.75,
     shX: -3, shY: -28, shA: -0.25,
-    fFx: 5, fFy: 0, fBx: -5, fBy: 0,
+    fFx: 5, fFy: 0, fBx: -5, fBy: 0, fFa: 0, fBa: 0,
     capeK: -0.05, swordFront: true, shieldFront: true, wounded: false,
     scale: 1, hideSword: false, kneel: 0
   };
@@ -1222,11 +1271,11 @@ function drawKnightBody(g, ps) {
   const fbx = OX + ps.fBx, fby = OY + ps.fBy;
 
   /* ---- far leg ---- */
-  const legB = ik(hx - 2, hy, fbx, fby, 10, 10, 1);
-  seg(g, hx - 2, hy, legB.ex, legB.ey, 7, M_FAR);                       /* cuisse */
+  const legB = ik(hx - KHIP, hy, fbx, fby, 10, 10, 1);
+  seg(g, hx - KHIP, hy, legB.ex, legB.ey, 7, M_FAR);                    /* cuisse */
   seg(g, legB.ex, legB.ey, legB.hx, legB.hy, 5.4, M_FAR);               /* greave */
   dome(g, legB.ex, legB.ey, 3, 3, { hi: P.stlLt, base: P.stlM, sh: P.stlS }, -0.6, -0.7);  /* poleyn */
-  seg(g, legB.hx - 1, legB.hy - 1, legB.hx + 3, legB.hy - 1, 4, { hi: P.stlM, base: P.stlD, sh: P.stlX });  /* sabaton */
+  foot(g, legB.hx, legB.hy - 1, 1, 3, 4, ps.fBa, { hi: P.stlM, base: P.stlD, sh: P.stlX });  /* sabaton */
 
   /* ---- far arm (shield arm when the shield is behind) ---- */
   const armB = ik(sx - 1, sy + 2, shx, shy, 8, 8, ps.shieldFront ? 1 : 1);
@@ -1288,13 +1337,13 @@ function drawKnightBody(g, ps) {
   drawHelm(g, hdx, hdy, ps.headA + lean * 0.4, ps.wounded);
 
   /* ---- near leg ---- */
-  const legF = ik(hx + 2, hy, ffx, ffy, 10, 10, 1);
-  seg(g, hx + 2, hy, legF.ex, legF.ey, 7.4, M_NEAR);
+  const legF = ik(hx + KHIP, hy, ffx, ffy, 10, 10, 1);
+  seg(g, hx + KHIP, hy, legF.ex, legF.ey, 7.4, M_NEAR);
   dome(g, legF.ex, legF.ey, 3.2, 3.2, { hi: P.stlHi, base: P.stl, sh: P.stlD }, -0.6, -0.7);
   seg(g, legF.ex, legF.ey, legF.hx, legF.hy, 5.8, M_NEAR);
   px(g, legF.ex, legF.ey - 2, P.stlHi);
-  seg(g, legF.hx - 1.5, legF.hy - 1, legF.hx + 3.5, legF.hy - 1, 4.2, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
-  px(g, legF.hx + 4, legF.hy - 1, P.stlD);
+  foot(g, legF.hx, legF.hy - 1, 1.5, 3.5, 4.2, ps.fFa, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
+  px(g, legF.hx + 4 * cos(ps.fFa), legF.hy - 1 + 4 * sin(ps.fFa), P.stlD);
 
   /* ---- near arm + shield ---- */
   if (ps.shieldFront) {
@@ -1388,8 +1437,6 @@ function capeSprite(i) {
 /* ---------------------------------------------------------------------
    7.  KNIGHT ANIMATION TABLE
    --------------------------------------------------------------------- */
-const gait = (ph) => ({ x: 8.5 * sin(ph), y: cos(ph) > 0 ? -9 * cos(ph) * cos(ph) : 0 });
-
 const KA = {
   idle: {
     n: 6, dur: 2.0, loop: 1, cape: -0.05, f(t, p) {
@@ -1410,16 +1457,20 @@ const KA = {
       p.fFx = 4.5; p.fBx = -6;
     }
   },
+  /* Ten frames, contacts on 0 and 5. Each foot swings around its own hip
+     pivot, not around the body centre — that offset is what used to make one
+     step reach further than the other and give the run a limp. */
   run: {
-    n: 8, dur: 0.60, loop: 1, cape: 0.55, f(t, p) {
+    n: 10, dur: 0.60, loop: 1, cape: 0.55, f(t, p) {
       const ph = t * TAU;
-      const F = gait(ph), B = gait(ph + PI);
-      p.fFx = F.x; p.fFy = F.y; p.fBx = B.x; p.fBy = B.y;
-      p.hipY = -20 + 1.3 * ab(sin(ph)) - 0.6;
-      p.lean = 0.20 + 0.03 * sin(ph * 2);
-      p.headX = 1.4; p.headY = -0.4 + 0.4 * ab(cos(ph));
-      p.swX = 6 - 4.2 * sin(ph); p.swY = -25.5 + 1.6 * ab(cos(ph)); p.swA = 0.95 - 0.2 * sin(ph);
-      p.shX = -6 + 4.4 * sin(ph); p.shY = -26.5 - 1.2 * sin(ph); p.shA = -0.30 + 0.12 * sin(ph);
+      const F = gaitFoot(t, 8.2, 6.2, 0.44, 3.5), B = gaitFoot(t + 0.5, 8.2, 6.2, 0.44, 3);
+      p.fFx = KHIP + F.x; p.fFy = F.y; p.fFa = F.a;
+      p.fBx = -KHIP + B.x; p.fBy = B.y; p.fBa = B.a;
+      p.hipY = hipRide(KLEG, F.x, F.y, B.x, B.y);
+      p.lean = 0.13 + 0.025 * sin(ph * 2);
+      p.headX = 0.9; p.headY = -0.4 + 0.4 * ab(cos(ph));
+      p.swX = 6 - 4.2 * sin(ph); p.swY = p.hipY - 5.5 + 1.6 * ab(cos(ph)); p.swA = 0.95 - 0.2 * sin(ph);
+      p.shX = -6 + 4.4 * sin(ph); p.shY = p.hipY - 6.5 - 1.2 * sin(ph); p.shA = -0.30 + 0.12 * sin(ph);
     }
   },
   jump: {
@@ -1550,6 +1601,9 @@ function knightFrame(state, i) {
       const p = KPOSE();
       p.capeK = A.cape === undefined ? 0 : A.cape;
       A.f((i + 0.5) / A.n, p);
+      /* never let a pose ask for more leg than there is: `mx` only ever
+         drops the hip, so poses already inside reach are left alone */
+      p.hipY = mx(p.hipY, hipRide(KLEG, p.fFx - KHIP, p.fFy, p.fBx + KHIP, p.fBy));
       meta = drawKnightBody(g, p);
       meta.capeK = p.capeK; meta.prone = p.prone;
     }
@@ -1567,6 +1621,7 @@ KA.roll = { n: 6, dur: 0.46, cape: 0 };
        brute   : horned iron helm, heavy axe, scraps of looted plate
    --------------------------------------------------------------------- */
 const GW = 62, GH = 58, GOX = 31, GOY = 48;
+const GHIP = 1.5, GLEG = 12.4;                 /* hip half-width, usable leg reach (of 6.5+6.5) */
 
 const M_SKIN = { hi: P.gobHi, base: P.gob, sh: P.gobD, edge: P.gobS };
 const M_SKIN_D = { hi: P.gob, base: P.gobM, sh: P.gobS, edge: P.gobS };
@@ -1583,7 +1638,7 @@ function GPOSE() {
   return {
     hipX: 0, hipY: -13, lean: 0.22, headX: 1.5, headY: 0, headA: 0.1,
     wX: 8, wY: -17, wA: 0.6, oX: -5, oY: -17, oA: 0.2,
-    fFx: 4, fFy: 0, fBx: -4, fBy: 0, weapFront: true, dead: 0, hideW: false
+    fFx: 4, fFy: 0, fBx: -4, fBy: 0, fFa: 0, fBa: 0, weapFront: true, dead: 0, hideW: false
   };
 }
 
@@ -1699,10 +1754,10 @@ function drawGoblin(g, cfg) {
     const L1 = 6.5 * s, L2 = 6.5 * s, A1 = 6 * s, A2 = 6 * s;
 
     /* far leg */
-    const lb = ik(hx - 1.5 * s, hy, fbx, fby, L1, L2, 1);
-    seg(g, hx - 1.5 * s, hy, lb.ex, lb.ey, 4.6 * s, M_SKIN_D);
+    const lb = ik(hx - GHIP * s, hy, fbx, fby, L1, L2, 1);
+    seg(g, hx - GHIP * s, hy, lb.ex, lb.ey, 4.6 * s, M_SKIN_D);
     seg(g, lb.ex, lb.ey, lb.hx, lb.hy, 3.6 * s, M_SKIN_D);
-    seg(g, lb.hx - 1, lb.hy - 0.8, lb.hx + 2.6 * s, lb.hy - 0.8, 2.6 * s, { hi: P.gobM, base: P.gobD, sh: P.gobS });
+    foot(g, lb.hx, lb.hy - 0.8, 1, 2.6 * s, 2.6 * s, ps.fBa, { hi: P.gobM, base: P.gobD, sh: P.gobS });
     /* far arm */
     const ab2 = ik(sx - 1 * s, sy + 1.5 * s, ox, oy, A1, A2, 1);
     seg(g, sx - 1 * s, sy + 1.5 * s, ab2.ex, ab2.ey, 3.8 * s, M_SKIN_D);
@@ -1744,16 +1799,16 @@ function drawGoblin(g, cfg) {
     /* head */
     drawGobHead(g, hdx, hdy, ps.headA + ps.lean * 0.35, cfg);
     /* near leg */
-    const lf = ik(hx + 1.5 * s, hy, ffx, ffy, L1, L2, 1);
-    seg(g, hx + 1.5 * s, hy, lf.ex, lf.ey, 5 * s, M_SKIN);
+    const lf = ik(hx + GHIP * s, hy, ffx, ffy, L1, L2, 1);
+    seg(g, hx + GHIP * s, hy, lf.ex, lf.ey, 5 * s, M_SKIN);
     seg(g, lf.ex, lf.ey, lf.hx, lf.hy, 3.8 * s, M_SKIN);
     if (cfg.helm === 'iron') { /* iron greave on the leading shin */
       seg(g, lf.ex, lf.ey, lf.hx, lf.hy, 3.0 * s, { hi: P.stlLt, base: P.stlM, sh: P.stlS });
     } else { /* rag wrappings */
       dith(g, lf.ex - 2, lf.ey + 1, 4, 3, cfg.cloth, cfg.cloth2, 1);
     }
-    seg(g, lf.hx - 1.2, lf.hy - 0.8, lf.hx + 3 * s, lf.hy - 0.8, 3 * s, { hi: P.gobHi, base: P.gob, sh: P.gobD });
-    px(g, lf.hx + 3 * s, lf.hy - 1.6, P.boneD);   /* claw */
+    foot(g, lf.hx, lf.hy - 0.8, 1.2, 3 * s, 3 * s, ps.fFa, { hi: P.gobHi, base: P.gob, sh: P.gobD });
+    px(g, lf.hx + 3 * s * cos(ps.fFa), lf.hy - 1.6 + 3 * s * sin(ps.fFa), P.boneD);   /* claw */
     /* near arm + weapon */
     if (ps.weapFront) {
       const aw = ik(sx + s, sy + 1.5 * s, wx, wy, A1, A2, -1);
@@ -1777,27 +1832,29 @@ const GA = {
     }
   },
   walk: {
-    n: 6, dur: 0.66, loop: 1, f(t, p) {
+    n: 8, dur: 0.66, loop: 1, f(t, p) {
       const ph = t * TAU;
-      const F = { x: 5.5 * sin(ph), y: cos(ph) > 0 ? -5 * cos(ph) * cos(ph) : 0 };
-      const B = { x: 5.5 * sin(ph + PI), y: cos(ph + PI) > 0 ? -5 * cos(ph + PI) * cos(ph + PI) : 0 };
-      p.fFx = F.x; p.fFy = F.y; p.fBx = B.x; p.fBy = B.y;
-      p.hipY = -13 + 1.1 * ab(sin(ph)); p.lean = 0.30;
-      p.headX = 2; p.headY = 0.3 * cos(ph);
-      p.wX = 7 - 2.6 * sin(ph); p.wY = -16; p.wA = 0.8 - 0.2 * sin(ph);
-      p.oX = -5 + 2.6 * sin(ph); p.oY = -16;
+      const F = gaitFoot(t, 5.2, 3.4, 0.62, 3), B = gaitFoot(t + 0.5, 5.2, 3.4, 0.62, 2.6);
+      p.fFx = GHIP + F.x; p.fFy = F.y; p.fFa = F.a;
+      p.fBx = -GHIP + B.x; p.fBy = B.y; p.fBa = B.a;
+      p.hipY = hipRide(GLEG, F.x, F.y, B.x, B.y);
+      p.lean = 0.20;
+      p.headX = 1.6; p.headY = 0.3 * cos(ph);
+      p.wX = 7 - 2.6 * sin(ph); p.wY = p.hipY - 3; p.wA = 0.8 - 0.2 * sin(ph);
+      p.oX = -5 + 2.6 * sin(ph); p.oY = p.hipY - 3;
     }
   },
   run: {
-    n: 6, dur: 0.42, loop: 1, f(t, p) {
+    n: 8, dur: 0.42, loop: 1, f(t, p) {
       const ph = t * TAU;
-      const F = { x: 7 * sin(ph), y: cos(ph) > 0 ? -7 * cos(ph) * cos(ph) : 0 };
-      const B = { x: 7 * sin(ph + PI), y: cos(ph + PI) > 0 ? -7 * cos(ph + PI) * cos(ph + PI) : 0 };
-      p.fFx = F.x; p.fFy = F.y; p.fBx = B.x; p.fBy = B.y;
-      p.hipY = -13.5 + 1.4 * ab(sin(ph)); p.lean = 0.44;
-      p.headX = 2.6; p.headY = 0.4 * cos(ph); p.headA = -0.1;
-      p.wX = 8 - 3.6 * sin(ph); p.wY = -15.5; p.wA = 0.5 - 0.3 * sin(ph);
-      p.oX = -6 + 3.6 * sin(ph); p.oY = -16.5;
+      const F = gaitFoot(t, 6.3, 4.4, 0.46, 3), B = gaitFoot(t + 0.5, 6.3, 4.4, 0.46, 2.6);
+      p.fFx = GHIP + F.x; p.fFy = F.y; p.fFa = F.a;
+      p.fBx = -GHIP + B.x; p.fBy = B.y; p.fBa = B.a;
+      p.hipY = hipRide(GLEG, F.x, F.y, B.x, B.y);
+      p.lean = 0.32;
+      p.headX = 2.2; p.headY = 0.4 * cos(ph); p.headA = -0.1;
+      p.wX = 8 - 3.6 * sin(ph); p.wY = p.hipY - 2.5; p.wA = 0.5 - 0.3 * sin(ph);
+      p.oX = -6 + 3.6 * sin(ph); p.oY = p.hipY - 3.5;
     }
   },
   wind: {
@@ -1879,6 +1936,7 @@ function gobFrame(type, state, i) {
   const cv = bakeInto(GW, GH, function (g) {
     const p = GPOSE();
     A.f((i + 0.5) / A.n, p);
+    p.hipY = mx(p.hipY, hipRide(GLEG, p.fFx - GHIP, p.fFy, p.fBx + GHIP, p.fBy));
     drawGoblin(g, cfg)(p);
   }, { rim: 1.22, rimAdd: 11, bot: 0.58 });
   const e = { n: cv, f: flipOf(cv), fl: null, w: GW, h: GH };
@@ -1900,6 +1958,7 @@ function daggerSprite(i) {
    tarnished gold, and a mace that drags his whole body behind it.
    --------------------------------------------------------------------- */
 const BW = 176, BH = 168, BOX = 84, BOY = 138;
+const BHIP = 7, BLEG = 38.6;                   /* hip half-width, usable leg reach (of 20+20) */
 
 const M_KSKIN = { hi: '#5f6d38', base: '#47542a', sh: '#2d3719', edge: '#1c2410' };
 const M_KSKIN_D = { hi: '#3f4a24', base: '#303a1b', sh: '#1e2611', edge: '#141a0b' };
@@ -1911,7 +1970,7 @@ function BPOSE() {
   return {
     hipX: 0, hipY: -40, lean: 0.16, headX: 3, headY: 0, headA: 0.08,
     mX: 22, mY: -52, mA: 0.9, oX: -16, oY: -50, oA: 0,
-    fFx: 9, fFy: 0, fBx: -10, fBy: 0, maceFront: true, capeK: 0, jaw: 0, crownTilt: 0
+    fFx: 9, fFy: 0, fBx: -10, fBy: 0, fFa: 0, fBa: 0, maceFront: true, capeK: 0, jaw: 0, crownTilt: 0
   };
 }
 
@@ -2048,8 +2107,8 @@ function drawKing(g, ps) {
     }
   }
   /* ---- far leg ---- */
-  const lb = ik(hx - 7, hy, fbx, fby, 20, 20, 1);
-  seg(g, hx - 7, hy, lb.ex, lb.ey, 15, M_KSKIN_D);
+  const lb = ik(hx - BHIP, hy, fbx, fby, 20, 20, 1);
+  seg(g, hx - BHIP, hy, lb.ex, lb.ey, 15, M_KSKIN_D);
   dome(g, lb.ex, lb.ey, 5.5, 5.5, { hi: '#3f4a24', base: '#2a3318', sh: '#19200e' }, -0.5, -0.7);
   seg(g, lb.ex, lb.ey, lb.hx, lb.hy, 11, M_KSKIN_D);
   /* strap wrappings on the far shin */
@@ -2058,7 +2117,7 @@ function drawKing(g, ps) {
     seg(g, lb.ex + (lb.hx - lb.ex) * t - 4, lb.ey + (lb.hy - lb.ey) * t,
       lb.ex + (lb.hx - lb.ex) * t + 5, lb.ey + (lb.hy - lb.ey) * t - 1, 2.4, { hi: P.leaD, base: P.leaS, sh: '#160f09' });
   }
-  seg(g, lb.hx - 3, lb.hy - 2, lb.hx + 8, lb.hy - 2, 5, { hi: '#2a3318', base: '#1e2611', sh: '#12170a' });
+  foot(g, lb.hx, lb.hy - 2, 3, 8, 5, ps.fBa, { hi: '#2a3318', base: '#1e2611', sh: '#12170a' });
   /* far arm */
   const ab2 = ik(sx - 6, sy + 4, ox, oy, 14, 13, 1);
   seg(g, sx - 6, sy + 4, ab2.ex, ab2.ey, 11, M_KSKIN_D);
@@ -2113,15 +2172,17 @@ function drawKing(g, ps) {
   /* ---- head ---- */
   drawKingHead(g, hdx, hdy, ps.headA + ps.lean * 0.3, ps.jaw, ps.crownTilt);
   /* ---- near leg ---- */
-  const lf = ik(hx + 7, hy, ffx, ffy, 20, 20, 1);
-  seg(g, hx + 7, hy, lf.ex, lf.ey, 16, M_KSKIN);
+  const lf = ik(hx + BHIP, hy, ffx, ffy, 20, 20, 1);
+  seg(g, hx + BHIP, hy, lf.ex, lf.ey, 16, M_KSKIN);
   dome(g, lf.ex, lf.ey, 6, 6, { hi: '#5f6d38', base: '#414d22', sh: '#2a3318' }, -0.5, -0.7);
   seg(g, lf.ex, lf.ey, lf.hx, lf.hy, 12, M_KSKIN);
   /* strapped iron greave */
   seg(g, lf.ex + 1, lf.ey + 3, lf.hx + 1, lf.hy - 3, 9, { hi: P.stlLt, base: P.stlD, sh: P.stlX });
   px(g, lf.ex + 1, lf.ey + 4, P.stlHi);
-  seg(g, lf.hx - 3, lf.hy - 2, lf.hx + 9, lf.hy - 2, 5.5, { hi: '#5f6d38', base: '#414d22', sh: '#2a3318' });
-  px(g, lf.hx + 9, lf.hy - 4, P.boneD); px(g, lf.hx + 8, lf.hy - 5, P.bone);
+  foot(g, lf.hx, lf.hy - 2, 3, 9, 5.5, ps.fFa, { hi: '#5f6d38', base: '#414d22', sh: '#2a3318' });
+  const fc = cos(ps.fFa), fs = sin(ps.fFa);
+  px(g, lf.hx + 9 * fc, lf.hy - 4 + 9 * fs, P.boneD);
+  px(g, lf.hx + 8 * fc + fs, lf.hy - 5 + 8 * fs - fc, P.bone);
   /* ---- near arm + mace ---- */
   if (ps.maceFront) {
     const am = ik(sx + 6, sy + 5, mx2, my2, 14, 13, -1);
@@ -2147,16 +2208,19 @@ const BA = {
       p.fFx = 13; p.fBx = -14;
     }
   },
+  /* Eight frames, contacts on 0 and 4. Flat-footed on purpose — the pitch is
+     scaled right back, because Grullk plants his weight, he does not spring. */
   walk: {
-    n: 6, dur: 1.15, loop: 1, f(t, p) {
+    n: 8, dur: 1.15, loop: 1, f(t, p) {
       const ph = t * TAU;
-      const F = { x: 13 * sin(ph), y: cos(ph) > 0 ? -11 * cos(ph) * cos(ph) : 0 };
-      const B = { x: 13 * sin(ph + PI), y: cos(ph + PI) > 0 ? -11 * cos(ph + PI) * cos(ph + PI) : 0 };
-      p.fFx = F.x + 2; p.fFy = F.y; p.fBx = B.x - 2; p.fBy = B.y;
-      p.hipY = -40 + 2.4 * ab(sin(ph)); p.lean = 0.20 + 0.03 * sin(ph * 2);
-      p.headX = 3.5; p.headY = 0.8 * cos(ph);
-      p.mX = 24 - 4 * sin(ph); p.mY = -46 + 2 * ab(cos(ph)); p.mA = 1.0 - 0.12 * sin(ph);
-      p.oX = -18 + 5 * sin(ph); p.oY = -46;
+      const F = gaitFoot(t, 12, 6.5, 0.66, 9, 0.6), B = gaitFoot(t + 0.5, 12, 6.5, 0.66, 8, 0.6);
+      p.fFx = BHIP + F.x; p.fFy = F.y; p.fFa = F.a;
+      p.fBx = -BHIP + B.x; p.fBy = B.y; p.fBa = B.a;
+      p.hipY = hipRide(BLEG, F.x, F.y, B.x, B.y);
+      p.lean = 0.14 + 0.03 * sin(ph * 2);
+      p.headX = 3; p.headY = 0.8 * cos(ph);
+      p.mX = 24 - 4 * sin(ph); p.mY = p.hipY - 6 + 2 * ab(cos(ph)); p.mA = 1.0 - 0.12 * sin(ph);
+      p.oX = -18 + 5 * sin(ph); p.oY = p.hipY - 6;
       p.capeK = 0.25 + 0.08 * sin(ph);
     }
   },
@@ -2278,6 +2342,7 @@ function bossFrame(state, i) {
   const cv = bakeInto(BW, BH, function (g) {
     const p = BPOSE();
     A.f((i + 0.5) / A.n, p);
+    p.hipY = mx(p.hipY, hipRide(BLEG, p.fFx - BHIP, p.fFy, p.fBx + BHIP, p.fBy));
     drawKing(g, p);
   }, { rim: 1.17, rimAdd: 8, bot: 0.56 });
   const e = { n: cv, f: flipOf(cv), fl: null, w: BW, h: BH };
@@ -3643,7 +3708,7 @@ function plUpdate(dt) {
     /* footfall dust on the two contact frames */
     if (p.anim === 'run' && p.onGround) {
       const f2 = p.frame;
-      if ((f2 === 2 || f2 === 6) && p.stepPhase !== f2) {
+      if ((f2 === 0 || f2 === 5) && p.stepPhase !== f2) {
         FX.footDust(p.x - p.face * 3, p.y, p.face, ab(p.vx));
         AUD.step();
       }
@@ -4168,10 +4233,13 @@ function bossUpdate(dt) {
         else if (adx < 96) pick = Math.random() < 0.45 ? 'smash' : (Math.random() < 0.6 ? 'diag' : 'sweep');
         else if (adx < 190) pick = Math.random() < 0.62 ? 'diag' : 'walk';
         else pick = 'walk';
-        if (pick === 'walk') { bSet('walk', 'walk'); b.cd = 0.28; }
+        /* re-picking `walk` every 0.28 s must not restart the cycle, or the
+           stride never gets past its first frame and Grullk slides along on
+           a frozen leg */
+        if (pick === 'walk') { bSet('walk', b.anim === 'walk' ? undefined : 'walk'); b.cd = 0.28; }
         else { bSet(pick, pick); b.atkKind = pick; b.hitDone = false; }
       } else {
-        if (adx > 62) bSet(b.state === 'walk' ? 'walk' : 'walk', b.anim === 'walk' ? undefined : 'walk');
+        if (adx > 62) bSet('walk', b.anim === 'walk' ? undefined : 'walk');
         else if (b.anim !== 'idle') bSet('idle', 'idle');
       }
       if (b.state === 'walk') {
@@ -4244,7 +4312,7 @@ function bossUpdate(dt) {
     let tt = (b.at / A2.dur) % 1;
     b.frame = fl(tt * A2.n) % A2.n;
     /* heavy footfalls */
-    if (b.state === 'walk' && b.onGround && (b.frame === 1 || b.frame === 4) && b.stepPhase !== b.frame) {
+    if (b.state === 'walk' && b.onGround && (b.frame === 0 || b.frame === 4) && b.stepPhase !== b.frame) {
       b.stepPhase = b.frame;
       FX.dust(b.x - b.face * 6, b.y, 4, 24, 14, P.stnLt);
       FX.stoneBurst(b.x - b.face * 4, b.y, 2, 40, 4);
