@@ -104,6 +104,41 @@ Karakterler el ile çizilmiş PNG değildir; **küçük bir iskeletten prosedür
 **Kural:** `plate`/`dome`/`finish` sadece **pişirme sırasında** çağrılır, asla frame içinde değil.
 Kare başına yol sadece önbelleklenmiş `drawImage` (`blit`) ve `fillRect` içerir.
 
+### 3.2b Yürüyüş sistemi (`gaitFoot` / `hipRide` / `foot`) — otorite
+Üç karakterin de **bütün** lokomosyon döngüleri bu üç yardımcıdan geçer. Ayağa doğrudan
+sinüs yazmak yasak: sinüs, ayağı strokun iki ucunda yavaşlatırken gövde hızını korur, taban
+taşın üstünde kayar ("paten" hissi). Eski `gait()` yardımcısı tam olarak bunu yapıyordu ve
+kaldırıldı.
+
+- **`gaitFoot(u, A, H, st, toe, pk)`** — tek bacağın ayak yolu, **kendi kalça pivotu etrafında**.
+  `u` o bacağın fazı `[0,1)`; ayak `+A`'da yere basar, `st` duruş oranı boyunca **sabit hızla**
+  düz geriye `-A`'ya kayar, sonra `H` yüksekliğinde bir yayla öne savrulur. Savrulma temas
+  noktasını bir tık aşıp geri çekilir (gerçek bacak retraksiyonu) — kaymanın son kalıntısı budur.
+  Döndürdüğü `a` bilek eğimidir (topuk önce girer, parmak itişte aşağı bakar); `toe` (bileğin
+  önündeki bot uzunluğu) itiş anında bileği kaldırır, böylece **topuk kalkar, parmak yere
+  gömülmez**. `pk` eğimi ölçekler — Grullk düz tabanlı yürür (`0.6`).
+- **`hipRide(R, fx, fy, bx, by)`** — kalçanın hangi yükseklikte olması gerektiğini **hesaplar**.
+  Kalça yüksekliği elle yazılırsa adımın uçlarında `ik` tam gerilmede kırpar, taban yerden
+  kalkar ve yürüyüş topallar; kalça pivotları merkezden ±birkaç piksel kaydığı için iki bacak
+  bu sınıra **farklı noktalarda** çarpar, topallama da simetrik olmaz. Canlı ayak hedefleri
+  verildiğinde gerçek yürüyüşün adım başına iki çöküşü bedavaya gelir. `R` bacağın tam
+  boyunun biraz altındadır → diz asla kilitlenmez.
+- **`foot(g, ax,ay, back, fwd, w, a, mat)`** — bilekten menteşeli bot; ağırlık hissini veren şey.
+
+**Sabitler (otorite):** `KHIP/KLEG = 2 / 19.3` (10+10), `GHIP/GLEG = 1.5 / 12.4` (6.5+6.5),
+`BHIP/BLEG = 7 / 38.6` (20+20). Kalça pivotu ve ayak hedefi **aynı** ofseti kullanmalıdır
+(`p.fFx = KHIP + F.x`), yoksa bir adım diğerinden uzun olur ve topallama geri gelir.
+
+**Ağ:** `knightFrame`/`gobFrame`/`bossFrame` içinde, `A.f()` çağrıldıktan **sonra**
+`p.hipY = mx(p.hipY, hipRide(...))` uygulanır. `mx` olduğu için bu yalnızca kalçayı
+*indirir* — erişim içinde kalan pozlara dokunmaz. Yani **hiçbir** animasyonda (saldırı,
+idle, hurt dahil) bacak kilitli-gergin kalamaz. Yeni bir poz yazarken kalça yüksekliğini
+dert etme, ağ halleder.
+
+**Temas kareleri:** şövalye `run` 10 kare → temas 0 ve 5 (`plUpdate` içindeki ayak tozu/sesi);
+Grullk `walk` 8 kare → temas 0 ve 4 (`bossUpdate`). Kare sayısını değiştirirsen bu iki
+indeks listesini de güncelle, yoksa adım sesi yanlış anda çalar.
+
 ### 3.3 Sprite ölçüleri (ayak/taban orijinli)
 | Varlık | Tuval | Orijin (ox, oy) |
 |---|---|---|
@@ -291,6 +326,12 @@ alçak kalır, oyuncu havadadır), `roll` ise i-frame'dir.
 `drawBossTell()` başın üstüne bir plaka çizer: aksiyon adı + **darbe anına dolan zamanlama çubuğu**;
 son 0.30 s'de yanıp söner. Mesafeye göre saldırı seçimi (`<50` yakın, `<96` orta, `<190` uzak);
 faz 2'de %34 ihtimalle **zincir saldırı** yapar ve cooldown kısalır (0.42–0.9 s vs 0.8–1.35 s).
+
+**Dikkat — `bSet` ve yürüyüş:** `idle/walk` dalı 0.28 s'de bir yeniden karar verir ve çoğu
+zaman yine `walk` seçer. `bSet(s, a)` ikinci argümanı verildiğinde `at`/`frame`'i sıfırlar,
+bu yüzden yeniden seçim **animasyonu yeniden başlatmamalıdır**: `bSet('walk', b.anim === 'walk'
+? undefined : 'walk')`. Aksi hâlde Grullk yürüyüş döngüsünün ilk karesini geçemez ve donmuş
+bacakla kayarak ilerler. Boss'a durum eklerken bu kalıbı koru.
 
 ### 6.5b Kapı: ilerleme kapısı ve arena kilidi (`GATE`, bölüm 19)
 Tek bir demir kapı iki iş yapar. Durum makinesi:
@@ -490,6 +531,8 @@ Değiştirmeden önce bilinmesi gerekenler:
 2. Yeni sprite mi? `bakeInto` + `SPR.get`/`SPR.cache` üzerinden geç, `finish()` seçeneklerini
    komşu varlıklarla tutarlı tut (şövalye `rim 1.23`, goblin `1.22`, boss `1.17`).
 3. Yeni animasyon mu? İlgili tabloya (`KA`/`GA`/`BA`) ekle; `buildWarmQueue` gerisini halleder.
+   Yürüme/koşma ise ayak yolunu **`gaitFoot` ile** kur ve ayakları kendi kalça pivotlarına
+   (`KHIP`/`GHIP`/`BHIP`) merkezle — bölüm 3.2b. Kalça yüksekliğini elle yazma.
 4. Yeni aksiyon mu? `KEYMAP`'e **ve** `#tc` içindeki bir butonun `data-act`'ine ekle,
    yoksa mobilde erişilemez olur. Buton bir **ikon** ister: `buildPadIcons` içine 16×16
    çiz ve `ICON_FOR`'a bağla — yazı koyma, pad'lerin dili ikondur.
