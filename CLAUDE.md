@@ -124,6 +124,14 @@ kaldırıldı.
   verildiğinde gerçek yürüyüşün adım başına iki çöküşü bedavaya gelir. `R` bacağın tam
   boyunun biraz altındadır → diz asla kilitlenmez.
 - **`foot(g, ax,ay, back, fwd, w, a, mat)`** — bilekten menteşeli bot; ağırlık hissini veren şey.
+- **`KNEE = -1`** — `ik`'in son argümanı. `bend = 1` eklemi kalça→ayak doğrusunun
+  `(-ny, nx)` tarafına, yani bacağın **arkasına** koyar: kuş diz eklemi, insan dizi değil.
+  Bacakların hepsi `KNEE` geçer, kollar kendi tarafını seçer. Sprite'lar sağa bakar ve
+  `flipOf` ile aynalanır, yani burada "ileri" her zaman `+x`'tir.
+
+**Diz bükümü ne kadar?** `R`'yi bacak boyunun ~%96–97'sinde tut (`19.3/20`, `12.4/13`,
+`38.6/40`). Bu, ayak yere basarken 2–5 px'lik yumuşak bir diz verir: kilitli-gergin
+değil, ama bükük de değil. `R`'yi düşürürsen karakter çömelir ve diz abartılı fırlar.
 
 **Sabitler (otorite):** `KHIP/KLEG = 2 / 19.3` (10+10), `GHIP/GLEG = 1.5 / 12.4` (6.5+6.5),
 `BHIP/BLEG = 7 / 38.6` (20+20). Kalça pivotu ve ayak hedefi **aynı** ofseti kullanmalıdır

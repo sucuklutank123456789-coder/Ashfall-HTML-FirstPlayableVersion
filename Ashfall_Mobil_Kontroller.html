@@ -1061,6 +1061,13 @@ function seg(g, x0, y0, x1, y1, w, c) {
   plate(g, (x0 + x1) * 0.5, (y0 + y1) * 0.5, len + w * 0.45, w, ang, c);
 }
 
+/* Knees bend forward. `ik` puts the joint on the (-ny, nx) side of the
+   hip→foot line when `bend` is 1, which is *behind* the leg — a bird's hock,
+   not a knee. Every leg in the game passes KNEE; arms choose their own side.
+   Sprites are drawn facing right and mirrored by `flipOf`, so "forward" is
+   always +x here. */
+const KNEE = -1;
+
 /* --- gait ------------------------------------------------------------
    Every walk in the game goes through these three helpers rather than a raw
    sine on the foot, because a sine is exactly what makes a stride read as
@@ -1271,7 +1278,7 @@ function drawKnightBody(g, ps) {
   const fbx = OX + ps.fBx, fby = OY + ps.fBy;
 
   /* ---- far leg ---- */
-  const legB = ik(hx - KHIP, hy, fbx, fby, 10, 10, 1);
+  const legB = ik(hx - KHIP, hy, fbx, fby, 10, 10, KNEE);
   seg(g, hx - KHIP, hy, legB.ex, legB.ey, 7, M_FAR);                    /* cuisse */
   seg(g, legB.ex, legB.ey, legB.hx, legB.hy, 5.4, M_FAR);               /* greave */
   dome(g, legB.ex, legB.ey, 3, 3, { hi: P.stlLt, base: P.stlM, sh: P.stlS }, -0.6, -0.7);  /* poleyn */
@@ -1337,7 +1344,7 @@ function drawKnightBody(g, ps) {
   drawHelm(g, hdx, hdy, ps.headA + lean * 0.4, ps.wounded);
 
   /* ---- near leg ---- */
-  const legF = ik(hx + KHIP, hy, ffx, ffy, 10, 10, 1);
+  const legF = ik(hx + KHIP, hy, ffx, ffy, 10, 10, KNEE);
   seg(g, hx + KHIP, hy, legF.ex, legF.ey, 7.4, M_NEAR);
   dome(g, legF.ex, legF.ey, 3.2, 3.2, { hi: P.stlHi, base: P.stl, sh: P.stlD }, -0.6, -0.7);
   seg(g, legF.ex, legF.ey, legF.hx, legF.hy, 5.8, M_NEAR);
@@ -1754,7 +1761,7 @@ function drawGoblin(g, cfg) {
     const L1 = 6.5 * s, L2 = 6.5 * s, A1 = 6 * s, A2 = 6 * s;
 
     /* far leg */
-    const lb = ik(hx - GHIP * s, hy, fbx, fby, L1, L2, 1);
+    const lb = ik(hx - GHIP * s, hy, fbx, fby, L1, L2, KNEE);
     seg(g, hx - GHIP * s, hy, lb.ex, lb.ey, 4.6 * s, M_SKIN_D);
     seg(g, lb.ex, lb.ey, lb.hx, lb.hy, 3.6 * s, M_SKIN_D);
     foot(g, lb.hx, lb.hy - 0.8, 1, 2.6 * s, 2.6 * s, ps.fBa, { hi: P.gobM, base: P.gobD, sh: P.gobS });
@@ -1799,7 +1806,7 @@ function drawGoblin(g, cfg) {
     /* head */
     drawGobHead(g, hdx, hdy, ps.headA + ps.lean * 0.35, cfg);
     /* near leg */
-    const lf = ik(hx + GHIP * s, hy, ffx, ffy, L1, L2, 1);
+    const lf = ik(hx + GHIP * s, hy, ffx, ffy, L1, L2, KNEE);
     seg(g, hx + GHIP * s, hy, lf.ex, lf.ey, 5 * s, M_SKIN);
     seg(g, lf.ex, lf.ey, lf.hx, lf.hy, 3.8 * s, M_SKIN);
     if (cfg.helm === 'iron') { /* iron greave on the leading shin */
@@ -2107,7 +2114,7 @@ function drawKing(g, ps) {
     }
   }
   /* ---- far leg ---- */
-  const lb = ik(hx - BHIP, hy, fbx, fby, 20, 20, 1);
+  const lb = ik(hx - BHIP, hy, fbx, fby, 20, 20, KNEE);
   seg(g, hx - BHIP, hy, lb.ex, lb.ey, 15, M_KSKIN_D);
   dome(g, lb.ex, lb.ey, 5.5, 5.5, { hi: '#3f4a24', base: '#2a3318', sh: '#19200e' }, -0.5, -0.7);
   seg(g, lb.ex, lb.ey, lb.hx, lb.hy, 11, M_KSKIN_D);
@@ -2172,7 +2179,7 @@ function drawKing(g, ps) {
   /* ---- head ---- */
   drawKingHead(g, hdx, hdy, ps.headA + ps.lean * 0.3, ps.jaw, ps.crownTilt);
   /* ---- near leg ---- */
-  const lf = ik(hx + BHIP, hy, ffx, ffy, 20, 20, 1);
+  const lf = ik(hx + BHIP, hy, ffx, ffy, 20, 20, KNEE);
   seg(g, hx + BHIP, hy, lf.ex, lf.ey, 16, M_KSKIN);
   dome(g, lf.ex, lf.ey, 6, 6, { hi: '#5f6d38', base: '#414d22', sh: '#2a3318' }, -0.5, -0.7);
   seg(g, lf.ex, lf.ey, lf.hx, lf.hy, 12, M_KSKIN);
